@@ -1,0 +1,93 @@
+{% extends 'base.html' %}
+
+{% block title %}회원가입 | VIBE-FASHION{% endblock %}
+
+{% block content %}
+<section class="py-5 bg-surface" style="min-height: 80vh;">
+    <div class="container py-4">
+        <div class="row justify-content-center">
+            <div class="col-12 col-md-8 col-lg-6">
+                <!-- 플래시 메시지 알림 -->
+                {% with messages = get_flashed_messages(with_categories=true) %}
+                    {% if messages %}
+                        {% for category, message in messages %}
+                            <div class="alert alert-{{ category if category != 'error' else 'danger' }} alert-dismissible fade show rounded-4 mb-4 shadow-sm" role="alert">
+                                <i class="bi bi-info-circle-fill me-2"></i>{{ message }}
+                                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                            </div>
+                        {% endfor %}
+                    {% endif %}
+                {% endwith %}
+
+                <div class="card border-0 rounded-4 shadow-lg p-4 p-md-5 bg-white">
+                    <div class="text-center mb-4">
+                        <span class="badge bg-danger rounded-pill px-3 py-1 small fw-bold mb-2">JOIN MEMBERSHIP</span>
+                        <h2 class="fw-bold letter-spacing-1 text-dark mb-1">CREATE ACCOUNT</h2>
+                        <p class="text-muted small">신규 회원가입 시 <strong>10% 웰컴 쿠폰</strong> 즉시 지급</p>
+                    </div>
+
+                    <form action="{{ url_for('main.signup') }}" method="POST" id="signupForm">
+                        <!-- 성명 / 닉네임 -->
+                        <div class="mb-3">
+                            <label for="signupFullName" class="form-label fw-bold small text-dark">이름 (성명)</label>
+                            <div class="input-group">
+                                <span class="input-group-text bg-light border-light-subtle"><i class="bi bi-person"></i></span>
+                                <input type="text" class="form-control bg-light border-light-subtle py-2" id="signupFullName" name="full_name" placeholder="홍길동" required autofocus>
+                            </div>
+                        </div>
+
+                        <!-- 이메일 주소 -->
+                        <div class="mb-3">
+                            <label for="signupEmail" class="form-label fw-bold small text-dark">이메일 주소</label>
+                            <div class="input-group">
+                                <span class="input-group-text bg-light border-light-subtle"><i class="bi bi-envelope"></i></span>
+                                <input type="email" class="form-control bg-light border-light-subtle py-2" id="signupEmail" name="email" placeholder="example@email.com" required>
+                            </div>
+                            <div class="form-text very-small text-muted">로그인 아이디로 사용됩니다.</div>
+                        </div>
+
+                        <!-- 비밀번호 -->
+                        <div class="mb-3">
+                            <label for="signupPassword" class="form-label fw-bold small text-dark">비밀번호</label>
+                            <div class="input-group">
+                                <span class="input-group-text bg-light border-light-subtle"><i class="bi bi-lock"></i></span>
+                                <input type="password" class="form-control bg-light border-light-subtle py-2" id="signupPassword" name="password" placeholder="6자리 이상 비밀번호 입력" minlength="6" required>
+                            </div>
+                        </div>
+
+                        <!-- 비밀번호 확인 -->
+                        <div class="mb-4">
+                            <label for="signupPasswordConfirm" class="form-label fw-bold small text-dark">비밀번호 확인</label>
+                            <div class="input-group">
+                                <span class="input-group-text bg-light border-light-subtle"><i class="bi bi-lock-fill"></i></span>
+                                <input type="password" class="form-control bg-light border-light-subtle py-2" id="signupPasswordConfirm" name="password_confirm" placeholder="비밀번호 재입력" minlength="6" required>
+                            </div>
+                        </div>
+
+                        <!-- 약관 동의 -->
+                        <div class="mb-4 p-3 rounded-3 bg-surface border border-light-subtle">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="termsCheck" required checked>
+                                <label class="form-check-label small text-muted" for="termsCheck">
+                                    [필수] <a href="#" class="text-decoration-none text-dark fw-bold">이용약관</a> 및 <a href="#" class="text-decoration-none text-dark fw-bold">개인정보 수집·이용</a>에 동의합니다.
+                                </label>
+                            </div>
+                        </div>
+
+                        <button type="submit" class="btn btn-dark w-100 py-3 rounded-pill fw-bold shadow-sm mb-3">
+                            회원가입 완료
+                        </button>
+                    </form>
+
+                    <div class="text-center pt-3 border-top border-light-subtle">
+                        <p class="text-muted small mb-0">
+                            이미 계정이 있으신가요? 
+                            <a href="{{ url_for('main.login') }}" class="text-coral fw-bold text-decoration-none ms-1">로그인하기</a>
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+{% endblock %}

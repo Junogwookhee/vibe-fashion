@@ -1,0 +1,67 @@
+{% extends 'base.html' %}
+
+{% block title %}로그인 | VIBE-FASHION{% endblock %}
+
+{% block content %}
+<section class="py-5 bg-surface" style="min-height: 80vh;">
+    <div class="container py-4">
+        <div class="row justify-content-center">
+            <div class="col-12 col-md-8 col-lg-5">
+                <!-- 플래시 메시지 알림 -->
+                {% with messages = get_flashed_messages(with_categories=true) %}
+                    {% if messages %}
+                        {% for category, message in messages %}
+                            <div class="alert alert-{{ category if category != 'error' else 'danger' }} alert-dismissible fade show rounded-4 mb-4 shadow-sm" role="alert">
+                                <i class="bi bi-info-circle-fill me-2"></i>{{ message }}
+                                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                            </div>
+                        {% endfor %}
+                    {% endif %}
+                {% endwith %}
+
+                <div class="card border-0 rounded-4 shadow-lg p-4 p-md-5 bg-white">
+                    <div class="text-center mb-4">
+                        <div class="d-inline-flex align-items-center justify-content-center mb-3">
+                            <span class="brand-logo-icon fs-4 p-2"><i class="bi bi-gem"></i></span>
+                        </div>
+                        <h2 class="fw-bold letter-spacing-1 text-dark mb-1">WELCOME BACK</h2>
+                        <p class="text-muted small">VIBE-FASHION에 오신 것을 환영합니다</p>
+                    </div>
+
+                    <form action="{{ url_for('main.login') }}" method="POST">
+                        <div class="mb-3">
+                            <label for="loginEmail" class="form-label fw-bold small text-dark">이메일 주소</label>
+                            <div class="input-group">
+                                <span class="input-group-text bg-light border-light-subtle"><i class="bi bi-envelope"></i></span>
+                                <input type="email" class="form-control bg-light border-light-subtle py-2" id="loginEmail" name="email" placeholder="name@example.com" required autofocus>
+                            </div>
+                        </div>
+
+                        <div class="mb-4">
+                            <div class="d-flex justify-content-between align-items-center mb-1">
+                                <label for="loginPassword" class="form-label fw-bold small text-dark mb-0">비밀번호</label>
+                                <a href="#" class="text-decoration-none very-small text-muted" onclick="alert('비밀번호 재설정 기능은 고객센터로 문의해주세요.')">비밀번호 찾기</a>
+                            </div>
+                            <div class="input-group">
+                                <span class="input-group-text bg-light border-light-subtle"><i class="bi bi-lock"></i></span>
+                                <input type="password" class="form-control bg-light border-light-subtle py-2" id="loginPassword" name="password" placeholder="비밀번호 입력 (6자리 이상)" required>
+                            </div>
+                        </div>
+
+                        <button type="submit" class="btn btn-dark w-100 py-3 rounded-pill fw-bold shadow-sm mb-3">
+                            로그인
+                        </button>
+                    </form>
+
+                    <div class="text-center pt-3 border-top border-light-subtle">
+                        <p class="text-muted small mb-0">
+                            아직 VIBE 회원이 아니신가요? 
+                            <a href="{{ url_for('main.signup') }}" class="text-coral fw-bold text-decoration-none ms-1">회원가입하기</a>
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+{% endblock %}

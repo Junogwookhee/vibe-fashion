@@ -3,6 +3,22 @@
 {% block title %}VIBE-FASHION | 스타일을 완성하는 트렌디 패션 쇼핑몰{% endblock %}
 
 {% block content %}
+<!-- 전역 플래시 알림 메시지 (로그인/회원가입 등) -->
+<div class="container pt-3">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                <div class="alert alert-{{ category if category != 'error' else 'danger' }} alert-dismissible fade show rounded-4 shadow-sm border-0 d-flex align-items-center justify-content-between mb-3" role="alert">
+                    <div>
+                        <i class="bi bi-check-circle-fill text-success me-2"></i><strong>{{ message }}</strong>
+                    </div>
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+</div>
+
 <!-- 1. 히어로 에디토리얼 섹션 (Hero Editorial Section) -->
 <section class="hero-luxury position-relative d-flex align-items-center justify-content-center text-center text-white">
     <div class="hero-bg-overlay"></div>
