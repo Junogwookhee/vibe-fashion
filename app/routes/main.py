@@ -55,11 +55,17 @@ def index():
 
         for item in response.data or []:
             # 가격 포맷팅 ({:,}원 형태, sale_price가 있을 경우 활용 가능하도록 원가 및 할인가 처리)
-            raw_price = item.get('price') or 0
+            raw_price = float(item.get('price') or 0)
             formatted_price = f"{int(raw_price):,}원"
 
             sale_price = item.get('sale_price')
-            formatted_sale_price = f"{int(sale_price):,}원" if sale_price else None
+            formatted_sale_price = None
+            discount_percent = None
+
+            if sale_price and float(sale_price) < raw_price and raw_price > 0:
+                sale_val = float(sale_price)
+                formatted_sale_price = f"{int(sale_val):,}원"
+                discount_percent = int(round((1 - (sale_val / raw_price)) * 100))
 
             products.append({
                 'id': item.get('id'),
@@ -67,7 +73,8 @@ def index():
                 'description': item.get('description') or '',
                 'price': formatted_price,
                 'sale_price': formatted_sale_price,
-                'thumbnail_url': item.get('thumbnail_url') or 'https://picsum.photos/seed/default/600/750',
+                'discount_percent': discount_percent,
+                'thumbnail_url': item.get('thumbnail_url') or 'https://images.unsplash.com/photo-1523381210434-271e8be1f52b?auto=format&fit=crop&w=600&q=80',
             })
     except Exception as e:
         logger.error(f"[Supabase Error] 상품 데이터 조회 실패: {e}", exc_info=True)
