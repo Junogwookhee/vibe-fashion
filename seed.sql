@@ -108,14 +108,16 @@ WHERE product_id IN (
 
 -- 기존 4개 샘플 상품 삭제 (새 순서 반영을 위해 재생성)
 DELETE FROM public.products
-WHERE slug IN ('basic-crop-tshirt', 'wide-denim-pants', 'overfit-cotton-jacket', 'floral-midi-dress')
-   OR name IN ('베이직 크롭 티셔츠', '와이드 데님 팬츠', '오버핏 코튼 자켓', '플로럴 미디 원피스');
+WHERE slug IN ('basic-crop-tshirt', 'wide-denim-pants', 'overfit-cotton-jacket', 'floral-midi-dress', 'classic-leather-totebag', 'minimal-chelsea-leather-boots')
+   OR name IN ('베이직 크롭 티셔츠', '와이드 데님 팬츠', '오버핏 코튼 자켓', '플로럴 미디 원피스', '클래식 레더 토트백', '미니멀 첼시 레더 부츠');
 
--- 샘플 상품 4개 등록 순서:
+-- 샘플 상품 6개 등록 순서:
 -- 1) 와이드 데님 팬츠 (하의, 39,900원) - sort_order: 1
--- 2) 베이직 크롭 티셔츠 (상의, 정상가 29,900원 / 할인가 19,900원) - sort_order: 2 (와이드 데님 팬츠 뒤)
+-- 2) 베이직 크롭 티셔츠 (상의, 정상가 29,900원 / 할인가 19,900원) - sort_order: 2
 -- 3) 오버핏 코튼 자켓 (아우터, 59,900원) - sort_order: 3
 -- 4) 플로럴 미디 원피스 (원피스, 45,900원) - sort_order: 4
+-- 5) 클래식 레더 토트백 (가방, 정상가 148,000원 / 할인가 119,000원) - sort_order: 5
+-- 6) 미니멀 첼시 레더 부츠 (신발, 168,000원) - sort_order: 6
 INSERT INTO public.products (category_id, name, slug, description, price, sale_price, stock, thumbnail_url, sort_order, is_featured, is_active)
 VALUES
     (
@@ -126,7 +128,7 @@ VALUES
         39900,
         NULL,
         120,
-        'https://images.unsplash.com/photo-1582552938357-32b906df40cb?auto=format&fit=crop&w=600&q=80',
+        'https://images.unsplash.com/photo-1541099649105-f69ad21f3246?auto=format&fit=crop&w=800&q=80',
         1,
         true,
         true
@@ -139,7 +141,7 @@ VALUES
         29900,
         19900,
         180,
-        'https://images.unsplash.com/photo-1581655353564-df123a1eb820?auto=format&fit=crop&w=600&q=80',
+        'https://images.unsplash.com/photo-1581655353564-df123a1eb820?auto=format&fit=crop&w=800&q=80',
         2,
         true,
         true
@@ -152,7 +154,7 @@ VALUES
         59900,
         NULL,
         80,
-        'https://images.unsplash.com/photo-1591047139829-d91aecb6caea?auto=format&fit=crop&w=600&q=80',
+        'https://images.unsplash.com/photo-1591047139829-d91aecb6caea?auto=format&fit=crop&w=800&q=80',
         3,
         true,
         true
@@ -165,8 +167,34 @@ VALUES
         45900,
         NULL,
         90,
-        'https://images.unsplash.com/photo-1572804013309-59a88b7e92f1?auto=format&fit=crop&w=600&q=80',
+        'https://images.unsplash.com/photo-1595777457583-95e059d581b8?auto=format&fit=crop&w=800&q=80',
         4,
+        true,
+        true
+    ),
+    (
+        (SELECT id FROM public.categories WHERE slug = 'bag' LIMIT 1),
+        '클래식 레더 토트백',
+        'classic-leather-totebag',
+        '고급 천연 소가죽의 은은한 결이 살아있는 모던 스퀘어 실루엣의 데일리 토트백',
+        148000,
+        119000,
+        45,
+        'https://images.unsplash.com/photo-1584917865442-de89df76afd3?auto=format&fit=crop&w=800&q=80',
+        5,
+        true,
+        true
+    ),
+    (
+        (SELECT id FROM public.categories WHERE slug = 'shoes' LIMIT 1),
+        '미니멀 첼시 레더 부츠',
+        'minimal-chelsea-leather-boots',
+        '탄탄한 쉐입과 견고한 아웃솔로 편안한 착화감을 선사하는 클래식 첼시 부츠',
+        168000,
+        NULL,
+        60,
+        'https://images.unsplash.com/photo-1608256246200-53e635b5b65f?auto=format&fit=crop&w=800&q=80',
+        6,
         true,
         true
     );

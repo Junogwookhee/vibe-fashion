@@ -36,7 +36,7 @@ def get_supabase_client() -> Client:
 def index():
     """
     메인 홈 화면 라우트:
-    Supabase products 테이블에서 is_active=true, is_featured=true인 상품 최대 4개를 조회하여 템플릿에 전달합니다.
+    Supabase products 테이블에서 is_active=true, is_featured=true인 상품을 조회하여 템플릿에 전달합니다.
     연결 실패 시 빈 리스트로 대체하며 터미널에 에러 로그를 출력합니다.
     """
     products = []
@@ -49,7 +49,7 @@ def index():
             .eq('is_active', True)
             .eq('is_featured', True)
             .order('sort_order')
-            .limit(4)
+            .limit(8)
             .execute()
         )
 
