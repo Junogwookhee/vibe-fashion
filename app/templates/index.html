@@ -414,14 +414,16 @@
                 <p class="text-white-75 small mb-4">
                     VIBE-FASHION의 신규 컬렉션 런칭 소식과 회원 전용 비공개 시크릿 세일 혜택을 가장 먼저 받아보세요.
                 </p>
-                <form class="newsletter-form d-flex gap-2 flex-column flex-sm-row justify-content-center" onsubmit="event.preventDefault(); alert('구독이 완료되었습니다! 웰컴 쿠폰 번호가 발송되었습니다.');">
-                    <input type="email" class="form-control rounded-pill px-4 py-3 border-0" placeholder="이메일 주소를 입력하세요" required>
-                    <button type="submit" class="btn btn-danger rounded-pill px-4 py-3 fw-bold flex-shrink-0">
-                        쿠폰 받기
-                    </button>
-                </form>
+                <div class="d-flex gap-3 justify-content-center align-items-center flex-wrap">
+                    <a href="{{ url_for('main.signup') }}" class="btn btn-danger rounded-pill px-4 py-3 fw-bold shadow-lg">
+                        <i class="bi bi-person-plus me-1"></i>무료 회원가입하고 쿠폰 받기
+                    </a>
+                    <a href="{{ url_for('main.login') }}" class="btn btn-outline-light rounded-pill px-4 py-3 fw-semibold">
+                        <i class="bi bi-box-arrow-in-right me-1"></i>기존 계정으로 로그인
+                    </a>
+                </div>
                 <div class="small text-white-50 mt-3">
-                    <i class="bi bi-lock-fill me-1"></i>스팸 없이 유용한 패션 큐레이션 정보만 발송됩니다.
+                    <i class="bi bi-shield-check me-1"></i>간편 회원가입으로 10초 만에 혜택을 받으실 수 있습니다.
                 </div>
             </div>
         </div>

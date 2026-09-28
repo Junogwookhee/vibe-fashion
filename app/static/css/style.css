@@ -184,6 +184,49 @@ body {
     border: 2px solid var(--brand-dark);
 }
 
+/* 인증 버튼 커스텀 */
+.btn-nav-login {
+    background: transparent;
+    color: #ffffff !important;
+    border: 1.5px solid rgba(255, 255, 255, 0.4);
+    font-weight: 600;
+    padding: 0.45rem 1rem;
+    font-size: 0.825rem;
+    transition: all 0.25s ease;
+}
+
+.btn-nav-login:hover {
+    background: rgba(255, 255, 255, 0.15);
+    border-color: #ffffff;
+    color: #ffffff !important;
+    transform: translateY(-2px);
+}
+
+.btn-nav-signup {
+    background: linear-gradient(135deg, var(--brand-coral) 0%, var(--brand-coral-hover) 100%);
+    color: #ffffff !important;
+    border: none;
+    font-weight: 700;
+    padding: 0.45rem 1.1rem;
+    font-size: 0.825rem;
+    box-shadow: 0 4px 14px rgba(244, 63, 94, 0.35);
+    transition: all 0.25s ease;
+}
+
+.btn-nav-signup:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(244, 63, 94, 0.55);
+    color: #ffffff !important;
+}
+
+.auth-mobile-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: #ffffff;
+    text-decoration: none;
+}
+
 /* 5. 럭셔리 에디토리얼 히어로 섹션 */
 .hero-luxury {
     min-height: 560px;
