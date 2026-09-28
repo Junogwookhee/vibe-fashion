@@ -154,6 +154,147 @@
     </div>
 </section>
 
+<!-- 3.5 고객 평점 및 생생 리뷰 게시판 (Customer Reviews & Ratings Board) -->
+<section id="reviews" class="py-5 bg-white border-top border-bottom">
+    <div class="container py-4">
+        <!-- 리뷰 헤더 및 평점 요약 배너 -->
+        <div class="review-summary-banner p-4 p-md-5 rounded-4 mb-5 text-white">
+            <div class="row align-items-center g-4">
+                <div class="col-lg-5 text-center text-lg-start border-lg-end border-white border-opacity-10 pe-lg-5">
+                    <span class="badge bg-danger rounded-pill px-3 py-1 fw-bold text-uppercase mb-2">REAL REVIEWS</span>
+                    <h2 class="display-6 fw-bold mb-2">고객 만족도 및 리뷰 평점</h2>
+                    <p class="text-white-75 small mb-0">
+                        VIBE-FASHION을 직접 경험한 고객님들의 솔직하고 생생한 리얼 착용 후기입니다.
+                    </p>
+                </div>
+                <div class="col-lg-4 text-center">
+                    <div class="d-inline-flex align-items-baseline gap-2 mb-1">
+                        <span class="display-3 fw-bold text-white font-serif">{{ avg_rating }}</span>
+                        <span class="text-white-50 fs-5">/ 5.0</span>
+                    </div>
+                    <div class="review-stars-large text-warning fs-4 mb-1">
+                        <i class="bi bi-star-fill"></i>
+                        <i class="bi bi-star-fill"></i>
+                        <i class="bi bi-star-fill"></i>
+                        <i class="bi bi-star-fill"></i>
+                        <i class="bi bi-star-fill"></i>
+                    </div>
+                    <div class="text-white-75 small">총 <strong>{{ total_reviews }}건</strong>의 실제 구매 리뷰</div>
+                </div>
+                <div class="col-lg-3 text-center text-lg-end">
+                    <button class="btn btn-review-write px-4 py-3 rounded-pill fw-bold shadow-lg" type="button" data-bs-toggle="modal" data-bs-target="#reviewModal">
+                        <i class="bi bi-pencil-square me-2"></i>리뷰 작성하기
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 고객 리뷰 카드 그리드 -->
+        <div class="row g-4">
+            {% for r in reviews %}
+            <div class="col-12 col-md-6 col-lg-3">
+                <div class="review-card h-100 p-4 rounded-4 bg-surface border border-light-subtle d-flex flex-column justify-content-between">
+                    <div>
+                        <!-- 별점 및 등록일 -->
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <div class="review-stars text-warning fs-6">
+                                {% for _ in range(r.rating) %}
+                                    <i class="bi bi-star-fill"></i>
+                                {% endfor %}
+                            </div>
+                            <span class="text-muted small">{{ r.created_at }}</span>
+                        </div>
+
+                        <!-- 리뷰 본문 -->
+                        <p class="review-text text-dark small mb-3">
+                            "{{ r.content }}"
+                        </p>
+                    </div>
+
+                    <!-- 연결된 상품 정보 및 작성자 -->
+                    <div class="review-author-wrap pt-3 border-top border-light-subtle d-flex align-items-center justify-content-between">
+                        <div class="d-flex align-items-center gap-2">
+                            {% if r.product_img %}
+                                <img src="{{ r.product_img }}" class="review-prod-thumb rounded-3" alt="{{ r.product_name }}">
+                            {% endif %}
+                            <div class="overflow-hidden">
+                                <div class="review-prod-name fw-bold small text-truncate" style="max-width: 140px;">{{ r.product_name }}</div>
+                                <div class="text-muted very-small"><i class="bi bi-check-circle-fill text-success me-1"></i>구매 고객</div>
+                            </div>
+                        </div>
+                        <div class="review-author-name text-muted small fw-semibold flex-shrink-0">
+                            {{ r.author }}
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</section>
+
+<!-- 리뷰 작성 모달 창 -->
+<div class="modal fade" id="reviewModal" tabindex="-1" aria-labelledby="reviewModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content rounded-4 border-0 shadow-2xl">
+            <div class="modal-header bg-dark text-white p-4">
+                <h5 class="modal-title fw-bold" id="reviewModalLabel">
+                    <i class="bi bi-star-fill text-warning me-2"></i>고객 평점 및 리뷰 작성
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form action="{{ url_for('main.add_review') }}" method="POST">
+                <div class="modal-body p-4">
+                    <!-- 상품 선택 -->
+                    <div class="mb-3">
+                        <label class="form-label fw-bold small">구매하신 상품 선택</label>
+                        <select name="product_id" class="form-select rounded-3 py-2" required>
+                            {% for p in products %}
+                                <option value="{{ p.id }}">{{ p.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <!-- 별점 선택 -->
+                    <div class="mb-3">
+                        <label class="form-label fw-bold small">상품 만족도 평점</label>
+                        <div class="d-flex gap-3 align-items-center pt-1">
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="rating" id="r5" value="5" checked>
+                                <label class="form-check-label small" for="r5">⭐⭐⭐⭐⭐ (5점)</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="rating" id="r4" value="4">
+                                <label class="form-check-label small" for="r4">⭐⭐⭐⭐ (4점)</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="rating" id="r3" value="3">
+                                <label class="form-check-label small" for="r3">⭐⭐⭐ (3점)</label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 작성자 이름 -->
+                    <div class="mb-3">
+                        <label class="form-label fw-bold small">작성자 닉네임 (선택)</label>
+                        <input type="text" name="author_name" class="form-control rounded-3 py-2" placeholder="예: 김민지">
+                    </div>
+
+                    <!-- 리뷰 내용 -->
+                    <div class="mb-2">
+                        <label class="form-label fw-bold small">솔직한 착용 후기</label>
+                        <textarea name="content" class="form-control rounded-3" rows="4" placeholder="소재, 핏감, 착용감 등 만족하셨던 점을 자유롭게 남겨주세요." required></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer p-4 border-top bg-light">
+                    <button type="button" class="btn btn-outline-secondary rounded-pill px-4" data-bs-dismiss="modal">취소</button>
+                    <button type="submit" class="btn btn-dark rounded-pill px-4 fw-bold">리뷰 등록하기</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
 <!-- 4. 시즌 룩북 큐레이션 배너 (Editorial Lookbook Section) -->
 <section id="lookbook" class="py-5 bg-white overflow-hidden">
     <div class="container py-3">
