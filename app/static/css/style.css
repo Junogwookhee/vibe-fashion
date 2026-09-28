@@ -1,0 +1,350 @@
+/* ==========================================================================
+   VIBE-FASHION 메인 스타일시트
+   - 브랜드 톤: Young Fit (딥 네이비 #1a2a4a + 코랄 #ff6b5b)
+   - 폰트: Noto Sans KR (기본), Playfair Display (영문/제목/강조)
+   - 모바일 반응형 및 인터랙션 최적화
+   ========================================================================== */
+
+/* 1. 구글 폰트 임포트 (Noto Sans KR, Playfair Display) */
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700;900&family=Playfair+Display:ital,wght@0,600;0,700;0,900;1,600&display=swap');
+
+/* 2. 테마 변수 (Young Fit 브랜드 컬러 및 폰트) */
+:root {
+    --brand-navy: #1a2a4a;        /* 주 컬러: 세련된 딥 네이비 */
+    --brand-navy-dark: #0f1a2e;   /* 히어로 그라디언트 하단 딥 다크 네이비 */
+    --brand-coral: #ff6b5b;       /* 포인트 컬러: 생동감 있는 코랄 */
+    --brand-coral-hover: #fa5240; /* 코랄 호버 컬러 */
+    --font-base: 'Noto Sans KR', -apple-system, BlinkMacSystemFont, sans-serif;
+    --font-accent: 'Playfair Display', serif;
+}
+
+/* 3. 기본 타이포그래피 및 레이아웃 */
+body {
+    font-family: var(--font-base);
+    color: #2b2f38;
+    background-color: #fbfbfd;
+    word-break: keep-all; /* 한글 줄바꿈을 자연스럽게 유지 */
+}
+
+/* 영문 브랜드명 및 제목용 악센트 폰트 적용 */
+.navbar-brand,
+.hero-section h1,
+.display-3,
+footer h5 {
+    font-family: var(--font-accent), var(--font-base);
+    letter-spacing: 0.5px;
+}
+
+/* 네비게이션 바 커스텀 */
+.navbar {
+    background-color: var(--brand-navy) !important;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.navbar-brand {
+    font-size: 1.5rem;
+}
+
+.navbar-brand i {
+    color: var(--brand-coral) !important;
+}
+
+/* 4. 히어로 섹션 (네이비 → 검은색 그라디언트 배경 & 슬로건 중앙 배치) */
+.hero-section {
+    position: relative;
+    min-height: 520px;
+    /* 딥 네이비(#1a2a4a)에서 검은색(#000000)으로 이어지는 그라디언트 배경 */
+    background: linear-gradient(135deg, var(--brand-navy) 0%, var(--brand-navy-dark) 50%, #000000 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    overflow: hidden;
+}
+
+/* 히어로 은은한 조명 오버레이 레이어 */
+.hero-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: radial-gradient(circle at 50% 30%, rgba(255, 107, 91, 0.15) 0%, transparent 65%);
+    pointer-events: none;
+}
+
+.hero-section .container {
+    position: relative;
+    z-index: 2;
+}
+
+/* 시즌 배지 */
+.hero-section .badge {
+    background-color: rgba(255, 255, 255, 0.15) !important;
+    color: #ffffff !important;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    letter-spacing: 1.5px;
+    font-weight: 600;
+}
+
+/* 슬로건: "당신의 일상을 스타일리시하게" 중앙 배치 및 텍스트 교체 */
+.hero-section h1 {
+    font-weight: 900;
+    font-size: 0; /* 기존 텍스트 대체 */
+    line-height: 1.25;
+    margin-bottom: 1rem;
+}
+
+.hero-section h1::before {
+    content: "당신의 일상을 스타일리시하게";
+    font-family: var(--font-base);
+    font-size: clamp(2rem, 5vw, 3.5rem);
+    font-weight: 800;
+    display: block;
+    color: #ffffff;
+    text-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+    letter-spacing: -0.5px;
+}
+
+/* 서브 슬로건 문구 */
+.hero-section .lead {
+    color: rgba(255, 255, 255, 0.85) !important;
+    font-size: 1.15rem;
+    font-weight: 400;
+    max-width: 650px;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+/* 히어로 CTA 버튼: "지금 쇼핑하기" 코랄색(#ff6b5b) 버튼 */
+.hero-section .btn.btn-light {
+    background-color: var(--brand-coral) !important;
+    border-color: var(--brand-coral) !important;
+    color: #ffffff !important;
+    font-size: 0; /* 기존 텍스트 대체 */
+    padding: 0.85rem 2.2rem !important;
+    border-radius: 50px;
+    font-weight: 700;
+    transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+    box-shadow: 0 8px 24px rgba(255, 107, 91, 0.4) !important;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.hero-section .btn.btn-light::before {
+    content: "지금 쇼핑하기";
+    font-size: 1.05rem;
+    font-family: var(--font-base);
+    letter-spacing: -0.2px;
+}
+
+.hero-section .btn.btn-light i {
+    font-size: 1rem;
+    margin-left: 0.5rem;
+    color: #ffffff;
+}
+
+.hero-section .btn.btn-light:hover {
+    background-color: var(--brand-coral-hover) !important;
+    border-color: var(--brand-coral-hover) !important;
+    transform: translateY(-3px);
+    box-shadow: 0 12px 28px rgba(255, 107, 91, 0.55) !important;
+}
+
+/* 5. 섹션 구분선 */
+.divider {
+    width: 48px;
+    height: 4px;
+    background-color: var(--brand-coral);
+    margin: 14px auto 0;
+    border-radius: 2px;
+}
+
+/* 6. 상품 카드 스타일링 */
+.product-card {
+    background-color: #ffffff;
+    border-radius: 16px;
+    overflow: hidden;
+    border: 1px solid rgba(26, 42, 74, 0.06) !important;
+    box-shadow: 0 4px 16px rgba(26, 42, 74, 0.05) !important;
+    /* 호버 시 부드러운 전환을 위한 transition */
+    transition: transform 0.3s cubic-bezier(0.165, 0.84, 0.44, 1), 
+                box-shadow 0.3s cubic-bezier(0.165, 0.84, 0.44, 1);
+}
+
+/* 상품 카드 호버 시: 그림자 대폭 강화 + 정확히 2% 확대 (scale 1.02) */
+.product-card:hover {
+    transform: translateY(-4px) scale(1.02);
+    box-shadow: 0 16px 36px rgba(26, 42, 74, 0.18) !important;
+}
+
+/* 상품 이미지 컨테이너 */
+.product-img-wrapper {
+    position: relative;
+    width: 100%;
+    height: 300px;
+    overflow: hidden;
+    background-color: #f1f3f7;
+}
+
+.product-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform 0.4s ease;
+}
+
+.product-card:hover .product-img {
+    transform: scale(1.04);
+}
+
+/* 카테고리 뱃지 */
+.category-badge {
+    position: absolute;
+    top: 14px;
+    left: 14px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 0.4rem 0.75rem;
+    border-radius: 8px;
+    background-color: rgba(26, 42, 74, 0.85) !important;
+    backdrop-filter: blur(4px);
+    color: #ffffff;
+}
+
+/* ③ 할인 배지: 코랄 배경(#ff6b5b) + 흰 텍스트 (우측 상단 배치) */
+.product-img-wrapper::after {
+    content: "SALE 20%";
+    position: absolute;
+    top: 14px;
+    right: 14px;
+    background-color: var(--brand-coral);
+    color: #ffffff;
+    font-size: 0.72rem;
+    font-weight: 700;
+    padding: 0.38rem 0.7rem;
+    border-radius: 8px;
+    box-shadow: 0 4px 10px rgba(255, 107, 91, 0.35);
+    letter-spacing: 0.3px;
+    z-index: 1;
+}
+
+/* 상품 카드 본문 */
+.card-body {
+    padding: 1.25rem;
+}
+
+.card-title {
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: var(--brand-navy);
+}
+
+.card-text {
+    font-size: 0.88rem;
+    line-height: 1.5;
+}
+
+/* ③ 가격 텍스트 굵기 대폭 증가 및 코랄 포인트 적용 */
+.card-body .text-danger {
+    color: var(--brand-coral) !important;
+    font-weight: 800 !important; /* 굵기 대폭 증가 */
+    font-size: 1.25rem !important;
+    letter-spacing: -0.5px;
+}
+
+/* 장바구니 담기 버튼 */
+.product-card .btn-outline-dark {
+    border-color: var(--brand-navy);
+    color: var(--brand-navy);
+    font-weight: 600;
+    border-radius: 20px;
+    transition: all 0.2s ease;
+}
+
+.product-card .btn-outline-dark:hover {
+    background-color: var(--brand-navy);
+    border-color: var(--brand-navy);
+    color: #ffffff;
+}
+
+/* 7. 브랜드 매력 포인트 섹션 */
+#about {
+    border-top: 1px solid #edf0f5;
+}
+
+#about i {
+    color: var(--brand-navy) !important;
+    transition: transform 0.25s ease;
+}
+
+#about .col-md-4:hover i {
+    transform: translateY(-4px);
+    color: var(--brand-coral) !important;
+}
+
+/* 8. 푸터 영역 */
+footer {
+    background-color: var(--brand-navy) !important;
+}
+
+/* ==========================================================================
+   ④ 반응형 디자인 미디어 쿼리
+   - 모바일 (화면 너비 ≤ 768px):
+     * 모바일 깨짐 방지 및 히어로 여백 최적화
+     * 카드 1열로 자동 조정 (100% 폭)
+   - 태블릿 (769px ~ 991px): 카드 2열 자동 조정
+   - 데스크톱 (≥ 992px): 카드 4열 자동 정렬
+   ========================================================================== */
+
+@media (max-width: 768px) {
+    /* 모바일 히어로 섹션 패딩 최적화 */
+    .hero-section {
+        min-height: 420px;
+        padding: 3rem 1rem;
+    }
+
+    .hero-section .lead {
+        font-size: 0.98rem;
+        margin-bottom: 1.5rem;
+    }
+
+    .hero-section .btn.btn-light {
+        width: 100%;
+        max-width: 280px;
+        padding: 0.75rem 1.5rem !important;
+    }
+
+    /* 모바일 환경에서 상품 카드 1열로 자동 조정 */
+    #products .row > [class*="col-"] {
+        flex: 0 0 100% !important;
+        max-width: 100% !important;
+    }
+
+    .product-img-wrapper {
+        height: 320px; /* 모바일에서 이미지가 시원하게 보이도록 높이 확보 */
+    }
+
+    /* 모바일 터치 호버 완화 */
+    .product-card:hover {
+        transform: translateY(-2px) scale(1.01);
+    }
+}
+
+@media (min-width: 769px) and (max-width: 991px) {
+    /* 태블릿 화면: 카드 2열 자동 조정 */
+    #products .row > [class*="col-"] {
+        flex: 0 0 50% !important;
+        max-width: 50% !important;
+    }
+}
+
+@media (min-width: 992px) {
+    /* 데스크톱 화면: 카드 4열 자동 정렬 */
+    #products .row > [class*="col-"] {
+        flex: 0 0 25% !important;
+        max-width: 25% !important;
+    }
+}
+

@@ -1,0 +1,15 @@
+# Python 가상환경 및 캐시
+venv/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# 환경 변수 파일
+.env
+
+# 배포 및 로그
+instance/
+.pytest_cache/
+*.log
