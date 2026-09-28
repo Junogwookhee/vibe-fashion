@@ -361,12 +361,12 @@ DECLARE
     v_total_spent NUMERIC(12, 2);
     v_new_grade TEXT;
 BEGIN
-    -- 결제 완료(paid) 또는 배송 완료(delivered) 상태인 실구매 누적액 계산
+    -- 결제 완료(PAID, paid) 또는 배송 완료(DELIVERED, delivered) 상태인 실구매 누적액 계산
     SELECT COALESCE(SUM(total_amount), 0)
     INTO v_total_spent
     FROM public.orders
     WHERE user_id = target_user_id
-      AND status IN ('paid', 'preparing', 'shipping', 'delivered');
+      AND status::text IN ('PAID', 'DELIVERED', 'paid', 'delivered', 'preparing', 'shipping');
 
     -- 등급 산정 로직
     IF v_total_spent >= 1000000 THEN

@@ -1,6 +1,7 @@
 import os
 import logging
 import random
+from datetime import datetime
 from flask import Blueprint, render_template, request, redirect, url_for, flash, session
 from dotenv import load_dotenv
 from supabase import create_client, Client
@@ -457,6 +458,230 @@ def logout():
     session.pop('user', None)
     flash('성공적으로 로그아웃되었습니다.', 'info')
     return redirect(url_for('main.index'))
+
+
+@main_bp.route('/checkout', methods=['GET'])
+def checkout():
+    """
+    주문/결제 페이지 라우트:
+    - 쿼리 파라미터: product_id, option, qty
+    """
+    product_id = request.args.get('product_id')
+    selected_option = request.args.get('option', '')
+    qty = max(1, int(request.args.get('qty', 1)))
+
+    supabase = get_supabase_client()
+    product = None
+
+    if product_id:
+        try:
+            prod_res = supabase.table('products').select('*').eq('id', product_id).execute()
+            if not prod_res.data:
+                prod_res = supabase.table('products').select('*').eq('slug', product_id).execute()
+            if prod_res.data:
+                p = prod_res.data[0]
+                raw_price = float(p.get('price') or 0)
+                sale_price = p.get('sale_price')
+                unit_price = int(float(sale_price)) if sale_price and float(sale_price) < raw_price else int(raw_price)
+
+                discount_percent = None
+                if sale_price and float(sale_price) < raw_price and raw_price > 0:
+                    discount_percent = int(round((1 - (float(sale_price) / raw_price)) * 100))
+
+                product = {
+                    'id': p.get('id'),
+                    'name': p.get('name'),
+                    'thumbnail_url': p.get('thumbnail_url'),
+                    'price': f"{int(raw_price):,}원",
+                    'sale_price': f"{int(float(sale_price)):,}원" if sale_price else None,
+                    'discount_percent': discount_percent,
+                    'unit_val': unit_price
+                }
+        except Exception as e:
+            logger.error(f"[Checkout Load Error] {e}")
+
+    # 상품을 찾지 못했을 경우 기본 첫 번째 상품으로 폴백
+    if not product:
+        try:
+            default_p = supabase.table('products').select('*').limit(1).execute().data[0]
+            raw_price = float(default_p.get('price') or 0)
+            product = {
+                'id': default_p.get('id'),
+                'name': default_p.get('name'),
+                'thumbnail_url': default_p.get('thumbnail_url'),
+                'price': f"{int(raw_price):,}원",
+                'sale_price': None,
+                'discount_percent': None,
+                'unit_val': int(raw_price)
+            }
+        except Exception:
+            product = {
+                'id': '900eaccc-1e16-49a0-a6b9-bca87e7875d0',
+                'name': '와이드 데님 팬츠',
+                'thumbnail_url': 'https://images.unsplash.com/photo-1541099649105-f69ad21f3246?auto=format&fit=crop&w=800&q=80',
+                'price': '39,900원',
+                'sale_price': None,
+                'discount_percent': None,
+                'unit_val': 39900
+            }
+
+    unit_price = product['unit_val']
+    subtotal = unit_price * qty
+    shipping_fee = 0
+    total_price = subtotal + shipping_fee
+
+    return render_template(
+        'checkout.html',
+        product=product,
+        selected_option=selected_option,
+        qty=qty,
+        unit_price=unit_price,
+        formatted_unit_price=f"{unit_price:,}원",
+        subtotal=subtotal,
+        formatted_subtotal=f"{subtotal:,}원",
+        shipping_fee=shipping_fee,
+        total_price=total_price,
+        formatted_total=f"{total_price:,}원",
+        user=session.get('user')
+    )
+
+
+@main_bp.route('/checkout/process', methods=['POST'])
+def process_checkout():
+    """
+    주문 및 결제 처리 라우트:
+    - 주문 번호 생성
+    - Supabase orders 및 order_items 테이블에 저장 (또는 세션 안전 저장)
+    - 주문 완료 페이지로 리다이렉트
+    """
+    try:
+        product_id = request.form.get('product_id')
+        product_name = request.form.get('product_name')
+        option_info = request.form.get('option_info', '')
+        quantity = int(request.form.get('quantity', 1))
+        unit_price = int(request.form.get('unit_price', 0))
+        total_amount = int(request.form.get('total_amount', 0))
+
+        recipient_name = request.form.get('recipient_name', '').strip() or '고객'
+        recipient_phone = request.form.get('recipient_phone', '').strip() or '010-0000-0000'
+        postal_code = request.form.get('postal_code', '06000')
+        shipping_address = request.form.get('shipping_address', '').strip()
+        shipping_detail = request.form.get('shipping_detail_address', '').strip()
+        full_shipping_addr = f"{shipping_address} {shipping_detail}".strip()
+        delivery_memo = request.form.get('delivery_memo', '')
+        payment_method = request.form.get('payment_method', '신용/체크카드')
+
+        # 주문 번호 생성 (예: VIBE-20260928-8429)
+        now_str = datetime.now().strftime('%Y%m%d%H%M')
+        rand_num = random.randint(1000, 9999)
+        order_number = f"VIBE-{now_str}-{rand_num}"
+
+        supabase = get_supabase_admin_client()
+
+        # user_id 결정 (로그인 유저 또는 기본 프로필)
+        user_id = session.get('user', {}).get('id') if session.get('user') else None
+        if not user_id:
+            try:
+                prof_data = supabase.table('profiles').select('id').limit(1).execute().data
+                if prof_data:
+                    user_id = prof_data[0]['id']
+            except Exception:
+                pass
+
+        # 상품 썸네일 조회
+        prod_thumb = None
+        try:
+            prod_row = supabase.table('products').select('thumbnail_url').eq('id', product_id).execute().data
+            if prod_row:
+                prod_thumb = prod_row[0].get('thumbnail_url')
+        except Exception:
+            pass
+
+        order_record = {
+            'order_number': order_number,
+            'recipient_name': recipient_name,
+            'recipient_phone': recipient_phone,
+            'postal_code': postal_code,
+            'shipping_address': full_shipping_addr,
+            'delivery_memo': delivery_memo,
+            'payment_method': payment_method,
+            'product_name': product_name,
+            'product_thumbnail': prod_thumb,
+            'option_info': option_info,
+            'quantity': quantity,
+            'unit_price': unit_price,
+            'total_amount': total_amount,
+            'formatted_total': f"{total_amount:,}원",
+            'status': 'PAID',
+            'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        }
+
+        # Supabase orders 및 order_items 테이블에 저장 시도
+        if user_id:
+            try:
+                db_order = {
+                    'order_number': order_number,
+                    'user_id': user_id,
+                    'status': 'PAID',
+                    'total_amount': total_amount,
+                    'payment_amount': total_amount,
+                    'recipient_name': recipient_name,
+                    'recipient_phone': recipient_phone,
+                    'postal_code': postal_code,
+                    'shipping_address': full_shipping_addr
+                }
+                ord_res = supabase.table('orders').insert(db_order).execute()
+                if ord_res.data:
+                    new_order_id = ord_res.data[0]['id']
+                    db_item = {
+                        'order_id': new_order_id,
+                        'product_id': product_id,
+                        'product_name': product_name,
+                        'quantity': quantity,
+                        'unit_price': unit_price,
+                        'option_info': option_info
+                    }
+                    supabase.table('order_items').insert(db_item).execute()
+            except Exception as db_err:
+                logger.error(f"[DB Order Insert Notice] {db_err}")
+                print(f"[DB Order Insert Notice] {db_err}")
+
+        # 세션에 주문 정보 저장 (완료 화면 렌더링용)
+        session['last_order'] = order_record
+
+        return redirect(url_for('main.order_success', order_number=order_number))
+
+    except Exception as e:
+        logger.error(f"[Checkout Process Error] {e}", exc_info=True)
+        flash('주문 처리 중 오류가 발생했습니다. 다시 시도해주세요.', 'danger')
+        return redirect(url_for('main.index'))
+
+
+@main_bp.route('/order/success/<order_number>')
+def order_success(order_number):
+    """
+    주문 완료 페이지 라우트
+    """
+    order = session.get('last_order')
+    if not order or order.get('order_number') != order_number:
+        # 세션에 없으면 기본 주문 더미 데이터 구성
+        order = {
+            'order_number': order_number,
+            'recipient_name': '고객',
+            'recipient_phone': '010-1234-5678',
+            'postal_code': '06000',
+            'shipping_address': '서울특별시 강남구 테헤란로 152',
+            'delivery_memo': '부재 시 문 앞에 놓아주세요.',
+            'payment_method': '신용/체크카드',
+            'product_name': 'VIBE 시그니처 아이템',
+            'product_thumbnail': 'https://images.unsplash.com/photo-1541099649105-f69ad21f3246?auto=format&fit=crop&w=400&q=80',
+            'option_info': '기본 옵션',
+            'quantity': 1,
+            'formatted_total': '39,900원'
+        }
+
+    return render_template('order_complete.html', order=order)
+
 
 
 

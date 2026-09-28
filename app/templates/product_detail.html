@@ -180,9 +180,7 @@
         {% endif %}
     </div>
 </section>
-{% endblock %}
 
-{% block scripts %}
 <!-- 상세페이지 전용 스크립트 -->
 <script>
     function changeMainImg(src, btn) {
@@ -221,8 +219,20 @@
     }
 
     function handleInstantBuy() {
-        handleDetailAddToCart();
-        alert('주문 결제 페이지로 이동합니다 (테스트용 알림)');
+        const optSelect = document.getElementById('productOptionSelect');
+        const qty = document.getElementById('purchaseQty').value || 1;
+        let optVal = '';
+
+        if (optSelect && optSelect.value) {
+            optVal = optSelect.value;
+        } else if (optSelect && !optSelect.value && optSelect.options.length > 1) {
+            alert('구매하실 옵션을 먼저 선택해주세요!');
+            optSelect.focus();
+            return;
+        }
+
+        const checkoutUrl = "{{ url_for('main.checkout') }}?product_id={{ product.id }}&option=" + encodeURIComponent(optVal) + "&qty=" + qty;
+        window.location.href = checkoutUrl;
     }
 </script>
 {% endblock %}
