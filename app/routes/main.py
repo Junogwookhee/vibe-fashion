@@ -13,10 +13,18 @@ load_dotenv()
 # 메인 페이지 및 관련 라우트를 관리하는 블루프린트 객체 생성
 main_bp = Blueprint('main', __name__)
 
+# Supabase 접속 기본값 설정 (Azure 등 클라우드 배포 환경에서 환경변수 누락 시 자동 대체)
+DEFAULT_SUPABASE_URL = "https://rdkvvonoenyzskovspcc.supabase.co"
+DEFAULT_SUPABASE_ANON_KEY = (
+    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9."
+    "eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJka3Z2b25vZW55enNrb3ZzcGNjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAwNTMxOTQsImV4cCI6MjEwNTYyOTE5NH0."
+    "yihCagU115cYIXlST52YeobVBePfiNRxw719RoWH4M4"
+)
+
 # Supabase 클라이언트 초기화 함수
 def get_supabase_client() -> Client:
-    supabase_url = os.getenv('SUPABASE_URL')
-    supabase_key = os.getenv('SUPABASE_ANON_KEY')
+    supabase_url = os.getenv('SUPABASE_URL') or DEFAULT_SUPABASE_URL
+    supabase_key = os.getenv('SUPABASE_ANON_KEY') or DEFAULT_SUPABASE_ANON_KEY
 
     if not supabase_url or not supabase_key:
         raise ValueError("SUPABASE_URL 또는 SUPABASE_ANON_KEY 환경변수가 설정되지 않았습니다.")
