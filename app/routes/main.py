@@ -73,6 +73,7 @@ def index():
 
             products.append({
                 'id': item.get('id'),
+                'slug': item.get('slug'),
                 'name': item.get('name'),
                 'description': item.get('description') or '',
                 'price': formatted_price,
@@ -203,4 +204,115 @@ def add_review():
         logger.error(f"[Review Submit Error] {e}", exc_info=True)
 
     return redirect(url_for('main.index', _anchor='reviews'))
+
+
+@main_bp.route('/product/<slug_or_id>')
+def product_detail(slug_or_id):
+    """
+    상품 상세 페이지 라우트:
+    - slug 또는 UUID id로 상품 단일 조회
+    - 상품 관련 옵션(product_options) 및 추가 이미지(product_images) 조회
+    - 함께 코디할 연관 상품(related_products) 조회
+    """
+    try:
+        supabase = get_supabase_client()
+
+        # 1. slug로 먼저 조회 시도, 없으면 id로 조회
+        prod_res = (
+            supabase.table('products')
+            .select('*')
+            .eq('slug', slug_or_id)
+            .execute()
+        )
+        if not prod_res.data:
+            prod_res = (
+                supabase.table('products')
+                .select('*')
+                .eq('id', slug_or_id)
+                .execute()
+            )
+
+        if not prod_res.data:
+            flash('해당 상품을 찾을 수 없습니다.', 'warning')
+            return redirect(url_for('main.index'))
+
+        raw_prod = prod_res.data[0]
+        raw_price = float(raw_prod.get('price') or 0)
+        formatted_price = f"{int(raw_price):,}원"
+
+        sale_price = raw_prod.get('sale_price')
+        formatted_sale_price = None
+        discount_percent = None
+
+        if sale_price and float(sale_price) < raw_price and raw_price > 0:
+            sale_val = float(sale_price)
+            formatted_sale_price = f"{int(sale_val):,}원"
+            discount_percent = int(round((1 - (sale_val / raw_price)) * 100))
+
+        product = {
+            'id': raw_prod.get('id'),
+            'name': raw_prod.get('name'),
+            'slug': raw_prod.get('slug'),
+            'description': raw_prod.get('description') or '',
+            'price': formatted_price,
+            'sale_price': formatted_sale_price,
+            'discount_percent': discount_percent,
+            'stock': raw_prod.get('stock') or 0,
+            'thumbnail_url': raw_prod.get('thumbnail_url') or 'https://images.unsplash.com/photo-1523381210434-271e8be1f52b?auto=format&fit=crop&w=800&q=80',
+        }
+
+        # 2. 상품 옵션 목록 조회
+        opts_res = (
+            supabase.table('product_options')
+            .select('*')
+            .eq('product_id', product['id'])
+            .order('id')
+            .execute()
+        )
+        options = opts_res.data or []
+
+        # 3. 상품 추가 갤러리 이미지 조회
+        imgs_res = (
+            supabase.table('product_images')
+            .select('*')
+            .eq('product_id', product['id'])
+            .order('sort_order')
+            .execute()
+        )
+        images = imgs_res.data or []
+        if not images:
+            images = [{'image_url': product['thumbnail_url']}]
+
+        # 4. 연관 상품 추천 (현재 상품 제외한 다른 신상품 4개)
+        related_res = (
+            supabase.table('products')
+            .select('id, name, slug, price, sale_price, thumbnail_url')
+            .neq('id', product['id'])
+            .eq('is_active', True)
+            .limit(4)
+            .execute()
+        )
+        related_products = []
+        for r in related_res.data or []:
+            r_price = float(r.get('price') or 0)
+            related_products.append({
+                'id': r.get('id'),
+                'slug': r.get('slug'),
+                'name': r.get('name'),
+                'price': f"{int(r_price):,}원",
+                'thumbnail_url': r.get('thumbnail_url')
+            })
+
+        return render_template(
+            'product_detail.html',
+            product=product,
+            options=options,
+            images=images,
+            related_products=related_products
+        )
+
+    except Exception as e:
+        logger.error(f"[Product Detail Error] {e}", exc_info=True)
+        return redirect(url_for('main.index'))
+
 

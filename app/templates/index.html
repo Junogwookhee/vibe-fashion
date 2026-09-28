@@ -89,7 +89,9 @@
                 <div class="card product-card-luxury h-100 border-0">
                     <!-- 상품 이미지 래퍼 -->
                     <div class="product-media-box">
-                        <img src="{{ item.thumbnail_url }}" class="product-media-img" alt="{{ item.name }}" loading="lazy">
+                        <a href="{{ url_for('main.product_detail', slug_or_id=item.slug or item.id) }}" class="d-block w-100 h-100 text-decoration-none">
+                            <img src="{{ item.thumbnail_url }}" class="product-media-img" alt="{{ item.name }}" loading="lazy">
+                        </a>
                         
                         <!-- 뱃지 영역 -->
                         <div class="product-badges-wrap">
@@ -117,7 +119,7 @@
                             VIBE ESSENTIALS
                         </div>
                         <h5 class="product-name fw-bold mb-2">
-                            <a href="#products" class="text-decoration-none text-dark">{{ item.name }}</a>
+                            <a href="{{ url_for('main.product_detail', slug_or_id=item.slug or item.id) }}" class="text-decoration-none text-dark">{{ item.name }}</a>
                         </h5>
                         <p class="product-desc text-muted small flex-grow-1 mb-3">
                             {{ item.description }}

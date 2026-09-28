@@ -556,6 +556,47 @@ body {
     box-shadow: 0 4px 12px rgba(15, 23, 42, 0.2);
 }
 
+/* 8.1 상품 상세 페이지 스타일 */
+.product-gallery-sticky {
+    position: sticky;
+    top: 96px;
+}
+
+.product-main-view {
+    aspect-ratio: 3 / 4;
+    border: 1px solid var(--brand-border);
+}
+
+.gallery-thumb-btn {
+    opacity: 0.7;
+    transition: all 0.2s ease;
+    cursor: pointer;
+}
+
+.gallery-thumb-btn:hover,
+.gallery-thumb-btn.active {
+    opacity: 1;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(15, 23, 42, 0.15);
+}
+
+.product-info-panel {
+    border-radius: var(--radius-lg);
+}
+
+.leading-relaxed {
+    line-height: 1.8;
+}
+
+.very-small {
+    font-size: 0.725rem;
+}
+
+.object-fit-cover {
+    object-fit: cover;
+    object-position: center;
+}
+
 /* 8.5 고객 평점 및 리뷰 섹션 스타일 */
 .review-summary-banner {
     background: linear-gradient(135deg, var(--brand-dark) 0%, #1e293b 100%);

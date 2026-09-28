@@ -1,0 +1,228 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ product.name }} | VIBE-FASHION 상세정보{% endblock %}
+
+{% block content %}
+<!-- 브레드크럼 (Breadcrumb Navigation) -->
+<nav class="py-3 bg-white border-bottom" aria-label="breadcrumb">
+    <div class="container">
+        <ol class="breadcrumb mb-0 small">
+            <li class="breadcrumb-item"><a href="{{ url_for('main.index') }}" class="text-decoration-none text-muted">HOME</a></li>
+            <li class="breadcrumb-item"><a href="{{ url_for('main.index') }}#products" class="text-decoration-none text-muted">COLLECTION</a></li>
+            <li class="breadcrumb-item active text-dark fw-bold" aria-current="page">{{ product.name }}</li>
+        </ol>
+    </div>
+</nav>
+
+<!-- 상품 상세 섹션 (Product Detail Main) -->
+<section class="py-5 bg-surface">
+    <div class="container py-2">
+        <div class="row g-5">
+            <!-- 1. 상품 이미지 갤러리 영역 -->
+            <div class="col-lg-6">
+                <div class="product-gallery-sticky">
+                    <!-- 메인 대표 이미지 -->
+                    <div class="product-main-view rounded-4 overflow-hidden shadow-sm mb-3 position-relative bg-white">
+                        <img id="mainProductImg" src="{{ product.thumbnail_url }}" alt="{{ product.name }}" class="w-100 h-100 object-fit-cover">
+                        {% if product.discount_percent %}
+                            <span class="badge-sale position-absolute top-0 start-0 m-3 fs-6 px-3 py-2">
+                                {{ product.discount_percent }}% OFF
+                            </span>
+                        {% endif %}
+                    </div>
+
+                    <!-- 썸네일 미리보기 리스트 -->
+                    {% if images and images|length > 1 %}
+                    <div class="d-flex gap-2 overflow-auto py-1">
+                        {% for img in images %}
+                        <button type="button" class="btn p-0 border rounded-3 overflow-hidden gallery-thumb-btn {% if loop.first %}active border-dark{% endif %}" style="width: 72px; height: 90px;" onclick="changeMainImg('{{ img.image_url }}', this)">
+                            <img src="{{ img.image_url }}" class="w-100 h-100 object-fit-cover" alt="썸네일">
+                        </button>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- 2. 상품 상세 정보 및 구매 옵션 영역 -->
+            <div class="col-lg-6">
+                <div class="product-info-panel bg-white p-4 p-md-5 rounded-4 shadow-sm border border-light-subtle">
+                    <!-- 카테고리 / 시즌 태그 -->
+                    <div class="d-flex align-items-center justify-content-between mb-2">
+                        <span class="badge bg-dark rounded-pill px-3 py-1 small fw-bold">2026 S/S ESSENTIAL</span>
+                        <span class="text-muted small"><i class="bi bi-eye me-1"></i>현재 <strong>24명</strong>이 함께 보고 있습니다</span>
+                    </div>
+
+                    <!-- 상품명 -->
+                    <h1 class="display-6 fw-bold text-dark mb-3">{{ product.name }}</h1>
+
+                    <!-- 가격 영역 -->
+                    <div class="price-section pb-4 mb-4 border-bottom">
+                        <div class="d-flex align-items-baseline gap-3">
+                            {% if product.sale_price %}
+                                <span class="fs-2 fw-bold text-danger">{{ product.sale_price }}</span>
+                                <span class="fs-5 text-muted text-decoration-line-through">{{ product.price }}</span>
+                                <span class="badge bg-danger rounded-pill px-2 py-1 small fw-bold">{{ product.discount_percent }}% 할인</span>
+                            {% else %}
+                                <span class="fs-2 fw-bold text-dark">{{ product.price }}</span>
+                            {% endif %}
+                        </div>
+                        <div class="text-muted small mt-1">
+                            <i class="bi bi-credit-card me-1"></i>무이자 할부 최대 7개월 지원 / 네이버페이·카카오페이 가능
+                        </div>
+                    </div>
+
+                    <!-- 상품 설명 -->
+                    <div class="product-description mb-4">
+                        <h6 class="fw-bold text-dark mb-2">PRODUCT DETAIL</h6>
+                        <p class="text-muted leading-relaxed">
+                            {{ product.description }}
+                        </p>
+                    </div>
+
+                    <!-- 옵션 선택 (색상 / 사이즈 등) -->
+                    {% if options %}
+                    <div class="product-options-box mb-4 p-3 rounded-3 bg-surface border border-light-subtle">
+                        <label class="form-label fw-bold text-dark small mb-2 d-flex justify-content-between align-items-center">
+                            <span>옵션 선택 (컬러 / 사이즈)</span>
+                            <span class="text-muted very-small">필수 선택</span>
+                        </label>
+                        <select id="productOptionSelect" class="form-select rounded-3 py-2" onchange="updateSelectedOption()">
+                            <option value="">옵션을 선택해주세요</option>
+                            {% for opt in options %}
+                            <option value="{{ opt.option_value }}" data-stock="{{ opt.stock }}">
+                                {{ opt.option_value }} {% if opt.stock > 0 %}(재고: {{ opt.stock }}개){% else %}(품절){% endif %}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    {% endif %}
+
+                    <!-- 수량 선택 -->
+                    <div class="quantity-box mb-4">
+                        <label class="form-label fw-bold text-dark small mb-2">수량 (QUANTITY)</label>
+                        <div class="d-inline-flex align-items-center border rounded-pill p-1 bg-surface">
+                            <button class="btn btn-sm rounded-circle px-2" type="button" onclick="changeQty(-1)"><i class="bi bi-dash"></i></button>
+                            <input type="number" id="purchaseQty" class="form-control form-control-sm text-center border-0 bg-transparent fw-bold" value="1" min="1" max="99" style="width: 50px;">
+                            <button class="btn btn-sm rounded-circle px-2" type="button" onclick="changeQty(1)"><i class="bi bi-plus"></i></button>
+                        </div>
+                    </div>
+
+                    <!-- 구매 액션 버튼 (장바구니 / 바로구매 / 위시리스트) -->
+                    <div class="d-flex gap-2 mb-4">
+                        <button class="btn btn-dark btn-lg flex-grow-1 rounded-pill fw-bold py-3 shadow-sm d-flex align-items-center justify-content-center gap-2" type="button" onclick="handleDetailAddToCart()">
+                            <i class="bi bi-bag-plus fs-5"></i>
+                            <span>장바구니 담기</span>
+                        </button>
+                        <button class="btn btn-danger btn-lg flex-grow-1 rounded-pill fw-bold py-3 shadow-lg d-flex align-items-center justify-content-center gap-2" type="button" onclick="handleInstantBuy()">
+                            <span>바로 구매하기</span>
+                            <i class="bi bi-arrow-right"></i>
+                        </button>
+                        <button class="btn btn-outline-dark btn-lg rounded-circle p-3 d-flex align-items-center justify-content-center" type="button" onclick="toggleWishlist(this, '{{ product.name }}')" title="위시리스트">
+                            <i class="bi bi-heart fs-5"></i>
+                        </button>
+                    </div>
+
+                    <!-- 배송 및 혜택 안내 -->
+                    <div class="delivery-benefit-list pt-4 border-top border-light-subtle small text-muted">
+                        <div class="d-flex align-items-center gap-2 mb-2">
+                            <i class="bi bi-truck text-dark fs-5"></i>
+                            <div><strong>전 상품 무료 배송</strong> (오늘 주문 시 내일 출고 예정)</div>
+                        </div>
+                        <div class="d-flex align-items-center gap-2 mb-2">
+                            <i class="bi bi-arrow-repeat text-dark fs-5"></i>
+                            <div><strong>7일 안심 무료 교환 및 반품</strong> 보장</div>
+                        </div>
+                        <div class="d-flex align-items-center gap-2">
+                            <i class="bi bi-gem text-danger fs-5"></i>
+                            <div>구매 시 결제 금액의 <strong>1% VIBE 멤버십 포인트</strong> 즉시 적립</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 3. 관련 상품 추천 (Related Curations) -->
+        {% if related_products %}
+        <div class="related-products-section mt-5 pt-5 border-top">
+            <div class="d-flex justify-content-between align-items-end mb-4">
+                <div>
+                    <span class="section-badge text-uppercase">CURATED TOGETHER</span>
+                    <h3 class="fw-bold mt-1 mb-0">함께 코디하면 좋은 추천 아이템</h3>
+                </div>
+                <a href="{{ url_for('main.index') }}#products" class="btn btn-outline-dark btn-sm rounded-pill px-3">
+                    전체 컬렉션 보기 <i class="bi bi-arrow-right ms-1"></i>
+                </a>
+            </div>
+
+            <div class="row g-4">
+                {% for item in related_products %}
+                <div class="col-6 col-md-4 col-lg-3">
+                    <div class="card product-card-luxury h-100 border-0">
+                        <div class="product-media-box">
+                            <a href="{{ url_for('main.product_detail', slug_or_id=item.slug or item.id) }}">
+                                <img src="{{ item.thumbnail_url }}" class="product-media-img" alt="{{ item.name }}" loading="lazy">
+                            </a>
+                        </div>
+                        <div class="card-body p-3">
+                            <h6 class="product-name fw-bold mb-1 text-truncate">
+                                <a href="{{ url_for('main.product_detail', slug_or_id=item.slug or item.id) }}" class="text-decoration-none text-dark">
+                                    {{ item.name }}
+                                </a>
+                            </h6>
+                            <div class="price-current fw-bold text-coral small">{{ item.price }}</div>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<!-- 상세페이지 전용 스크립트 -->
+<script>
+    function changeMainImg(src, btn) {
+        document.getElementById('mainProductImg').src = src;
+        document.querySelectorAll('.gallery-thumb-btn').forEach(b => {
+            b.classList.remove('active', 'border-dark');
+        });
+        btn.classList.add('active', 'border-dark');
+    }
+
+    function changeQty(diff) {
+        const qtyInput = document.getElementById('purchaseQty');
+        let val = parseInt(qtyInput.value) || 1;
+        val = Math.max(1, Math.min(99, val + diff));
+        qtyInput.value = val;
+    }
+
+    function updateSelectedOption() {
+        // 옵션 선택 변경 시 상태 처리
+    }
+
+    function handleDetailAddToCart() {
+        const optSelect = document.getElementById('productOptionSelect');
+        const qty = document.getElementById('purchaseQty').value;
+        let optText = '';
+
+        if (optSelect && optSelect.value) {
+            optText = ' (' + optSelect.value + ', ' + qty + '개)';
+        } else if (optSelect && !optSelect.value && optSelect.options.length > 1) {
+            alert('옵션을 먼저 선택해주세요!');
+            optSelect.focus();
+            return;
+        }
+
+        addToCart('{{ product.name }}' + optText);
+    }
+
+    function handleInstantBuy() {
+        handleDetailAddToCart();
+        alert('주문 결제 페이지로 이동합니다 (테스트용 알림)');
+    }
+</script>
+{% endblock %}
