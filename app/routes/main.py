@@ -4,46 +4,13 @@ import random
 from datetime import datetime
 from flask import Blueprint, render_template, request, redirect, url_for, flash, session
 from dotenv import load_dotenv
-from supabase import create_client, Client
+from app.utils.supabase_client import get_supabase_client, get_supabase_admin_client
 
 # 로깅 설정
 logger = logging.getLogger(__name__)
 
-# .env 파일에서 환경변수 로드
-load_dotenv()
-
 # 메인 페이지 및 관련 라우트를 관리하는 블루프린트 객체 생성
 main_bp = Blueprint('main', __name__)
-
-# Supabase 접속 기본값 설정 (Azure 등 클라우드 배포 환경에서 환경변수 누락 시 자동 대체)
-DEFAULT_SUPABASE_URL = "https://rdkvvonoenyzskovspcc.supabase.co"
-DEFAULT_SUPABASE_ANON_KEY = (
-    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9."
-    "eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJka3Z2b25vZW55enNrb3ZzcGNjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAwNTMxOTQsImV4cCI6MjEwNTYyOTE5NH0."
-    "yihCagU115cYIXlST52YeobVBePfiNRxw719RoWH4M4"
-)
-DEFAULT_SUPABASE_SERVICE_KEY = (
-    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9."
-    "eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJka3Z2b25vZW55enNrb3ZzcGNjIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc5MDA1MzE5NCwiZXhwIjoyMTA1NjI5MTk0fQ."
-    "d0UoTlFSAEIou91Iy8EzWz9v64QLEL_UftyDAFrMFqM"
-)
-
-# Supabase 클라이언트 초기화 함수
-def get_supabase_client() -> Client:
-    supabase_url = os.getenv('SUPABASE_URL') or DEFAULT_SUPABASE_URL
-    supabase_key = os.getenv('SUPABASE_ANON_KEY') or DEFAULT_SUPABASE_ANON_KEY
-
-    if not supabase_url or not supabase_key:
-        raise ValueError("SUPABASE_URL 또는 SUPABASE_ANON_KEY 환경변수가 설정되지 않았습니다.")
-
-    return create_client(supabase_url, supabase_key)
-
-
-def get_supabase_admin_client() -> Client:
-    """회원 생성 및 인증 처리를 위한 서비스 롤 클라이언트"""
-    supabase_url = os.getenv('SUPABASE_URL') or DEFAULT_SUPABASE_URL
-    service_key = os.getenv('SUPABASE_SERVICE_KEY') or DEFAULT_SUPABASE_SERVICE_KEY
-    return create_client(supabase_url, service_key)
 
 
 @main_bp.route('/')
@@ -201,9 +168,12 @@ def add_review():
         if not content:
             return redirect(url_for('main.index', _anchor='reviews'))
 
-        supabase = get_supabase_client()
-        profiles = supabase.table('profiles').select('id').limit(1).execute().data
-        user_id = profiles[0]['id'] if profiles else None
+        supabase = get_supabase_admin_client()
+        # 로그인 세션이 있으면 해당 user_id 사용, 없으면 첫 번째 프로필을 작성자로 매핑
+        user_id = session.get('user_id') or (session.get('user') or {}).get('id')
+        if not user_id:
+            profiles = supabase.table('profiles').select('id').limit(1).execute().data
+            user_id = profiles[0]['id'] if profiles else None
 
         if user_id and product_id:
             supabase.table('reviews').insert({
@@ -331,133 +301,59 @@ def product_detail(slug_or_id):
 
 @main_bp.route('/signup', methods=['GET', 'POST'])
 def signup():
-    """
-    회원가입 라우트:
-    - GET: 회원가입 폼 화면 렌더링
-    - POST: Supabase Auth를 통한 회원 생성 및 세션 자동 로그인
-    """
-    if request.method == 'GET':
-        if session.get('user'):
-            return redirect(url_for('main.index'))
-        return render_template('signup.html')
-
-    email = request.form.get('email', '').strip()
-    password = request.form.get('password', '').strip()
-    password_confirm = request.form.get('password_confirm', '').strip()
-    full_name = request.form.get('full_name', '').strip() or '고객'
-
-    # 기본 유효성 검사
-    if not email or not password:
-        flash('이메일과 비밀번호를 모두 입력해주세요.', 'warning')
-        return redirect(url_for('main.signup'))
-
-    if len(password) < 6:
-        flash('비밀번호는 최소 6자리 이상이어야 합니다.', 'warning')
-        return redirect(url_for('main.signup'))
-
-    if password != password_confirm:
-        flash('비밀번호가 일치하지 않습니다. 다시 확인해주세요.', 'danger')
-        return redirect(url_for('main.signup'))
-
-    try:
-        # 이메일 인증 절차 없이 즉시 로그인할 수 있도록 email_confirm: True로 생성
-        admin_client = get_supabase_admin_client()
-        created_user = admin_client.auth.admin.create_user({
-            'email': email,
-            'password': password,
-            'email_confirm': True,
-            'user_metadata': {'full_name': full_name}
-        })
-
-        if created_user and created_user.user:
-            # 회원가입 즉시 Flask 세션에 로그인 정보 저장
-            session['user'] = {
-                'id': created_user.user.id,
-                'email': created_user.user.email,
-                'full_name': full_name
-            }
-            flash(f'{full_name}님, VIBE-FASHION 회원가입을 축하합니다! 웰컴 10% 쿠폰이 발급되었습니다.', 'success')
-            return redirect(url_for('main.index'))
-        else:
-            flash('회원가입 처리 중 문제가 발생했습니다.', 'danger')
-            return redirect(url_for('main.signup'))
-
-    except Exception as e:
-        err_msg = str(e)
-        logger.error(f"[Signup Error] {err_msg}", exc_info=True)
-        if 'already registered' in err_msg.lower() or 'already exists' in err_msg.lower():
-            flash('이미 가입된 이메일 주소입니다. 로그인해주세요.', 'warning')
-            return redirect(url_for('main.login'))
-        flash('회원가입 실패: 잠시 후 다시 시도해주세요.', 'danger')
-        return redirect(url_for('main.signup'))
+    """/auth/signup으로 리다이렉트 (하위 호환성 유지)"""
+    return redirect(url_for('auth.signup'))
 
 
 @main_bp.route('/login', methods=['GET', 'POST'])
 def login():
-    """
-    로그인 라우트:
-    - GET: 로그인 폼 화면 렌더링
-    - POST: Supabase Auth 이메일/비밀번호 인증 후 세션 저장
-    """
-    if request.method == 'GET':
-        if session.get('user'):
-            return redirect(url_for('main.index'))
-        return render_template('login.html')
-
-    email = request.form.get('email', '').strip()
-    password = request.form.get('password', '').strip()
-
-    if not email or not password:
-        flash('이메일과 비밀번호를 입력해주세요.', 'warning')
-        return redirect(url_for('main.login'))
-
-    try:
-        supabase = get_supabase_client()
-        auth_res = supabase.auth.sign_in_with_password({
-            'email': email,
-            'password': password
-        })
-
-        if auth_res and auth_res.user:
-            user = auth_res.user
-            full_name = user.user_metadata.get('full_name') if user.user_metadata else None
-
-            # profiles 테이블에서 full_name 한번 더 조회 시도
-            if not full_name:
-                try:
-                    prof_data = supabase.table('profiles').select('full_name').eq('id', user.id).execute().data
-                    if prof_data and prof_data[0].get('full_name'):
-                        full_name = prof_data[0].get('full_name')
-                except Exception:
-                    pass
-
-            session['user'] = {
-                'id': user.id,
-                'email': user.email,
-                'full_name': full_name or user.email.split('@')[0]
-            }
-            flash(f'환영합니다, {session["user"]["full_name"]}님!', 'success')
-            return redirect(url_for('main.index'))
-        else:
-            flash('이메일 또는 비밀번호가 일치하지 않습니다.', 'danger')
-            return redirect(url_for('main.login'))
-
-    except Exception as e:
-        err_msg = str(e)
-        logger.error(f"[Login Error] {err_msg}", exc_info=True)
-        flash('이메일 또는 비밀번호가 일치하지 않습니다.', 'danger')
-        return redirect(url_for('main.login'))
+    """/auth/login으로 리다이렉트 (하위 호환성 유지)"""
+    return redirect(url_for('auth.login'))
 
 
 @main_bp.route('/logout')
 def logout():
+    """/auth/logout으로 리다이렉트 (하위 호환성 유지)"""
+    return redirect(url_for('auth.logout'))
+
+
+@main_bp.route('/delete_account', methods=['POST'])
+def delete_account_alias():
+    """/auth/delete-account로 내부 포워딩"""
+    from .auth import delete_account
+    return delete_account()
+
+
+@main_bp.route('/mypage')
+def mypage():
     """
-    로그아웃 라우트:
-    - Flask 세션 제거
+    마이페이지 라우트:
+    - login_required: 로그인 안 되어 있으면 /auth/login으로 이동
+    - 사용자 정보 및 회원 등급, 누적 구매 금액 표시
     """
-    session.pop('user', None)
-    flash('성공적으로 로그아웃되었습니다.', 'info')
-    return redirect(url_for('main.index'))
+    user_id = session.get('user_id')
+    if not user_id:
+        return redirect(url_for('auth.login', error='login_required', next='/mypage'))
+
+    user = session.get('user', {})
+    profile = {}
+    total_spent = 0
+
+    try:
+        supabase = get_supabase_client()
+        prof_res = supabase.table('profiles').select('*').eq('id', user_id).execute()
+        if prof_res.data:
+            profile = prof_res.data[0]
+            total_spent = float(profile.get('total_spent') or 0)
+    except Exception as e:
+        logger.error(f"[MyPage Profile Error] {e}")
+
+    return render_template(
+        'mypage.html',
+        user=user,
+        profile=profile,
+        formatted_total_spent=f"{int(total_spent):,}원"
+    )
 
 
 @main_bp.route('/checkout', methods=['GET'])

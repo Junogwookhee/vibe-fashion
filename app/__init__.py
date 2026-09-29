@@ -15,8 +15,10 @@ def create_app():
     # 기본 시크릿 키 설정 (.env의 SECRET_KEY 또는 기본값)
     app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'vibe-fashion-default-secret')
 
-    # routes 폴더에서 메인 블루프린트 가져와 등록하기
+    # routes 폴더에서 블루프린트 가져와 등록하기
     from .routes.main import main_bp
+    from .routes.auth import auth_bp
     app.register_blueprint(main_bp)
+    app.register_blueprint(auth_bp)
 
     return app
