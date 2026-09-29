@@ -1,6 +1,7 @@
 import os
 from flask import Flask
 from dotenv import load_dotenv
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 # .env 파일에서 환경 변수를 로드합니다.
 load_dotenv()
@@ -11,6 +12,9 @@ def create_app():
     Flask 앱 인스턴스를 생성하고 환경 설정 및 블루프린트(라우트)를 등록합니다.
     """
     app = Flask(__name__)
+
+    # Azure 등 리버스 프록시 환경에서 HTTPS 및 실제 호스트 헤더 인식
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
 
     # 기본 시크릿 키 설정 (.env의 SECRET_KEY 또는 기본값)
     app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'vibe-fashion-default-secret')

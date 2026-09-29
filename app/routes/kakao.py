@@ -30,10 +30,20 @@ def register_kakao_routes(auth_bp):
         base = os.getenv(
             "SUPABASE_URL", "https://rdkvvonoenyzskovspcc.supabase.co"
         ).rstrip("/")
-        key = os.getenv("SUPABASE_ANON_KEY", "").strip()
-        callback = os.getenv(
-            "KAKAO_REDIRECT_URL", "http://localhost:5000/auth/kakao/callback"
-        ).strip()
+        key = (
+            os.getenv("SUPABASE_ANON_KEY", "").strip()
+            or "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJka3Z2b25vZW55enNrb3ZzcGNjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAwNTMxOTQsImV4cCI6MjEwNTYyOTE5NH0.yihCagU115cYIXlST52YeobVBePfiNRxw719RoWH4M4"
+        )
+        callback = os.getenv("KAKAO_REDIRECT_URL", "").strip()
+        req_host = request.headers.get("X-Forwarded-Host", request.host)
+        req_scheme = request.headers.get("X-Forwarded-Proto", request.scheme)
+
+        # 로컬 개발 환경(localhost / 127.0.0.1)에서는 로컬 콜백을 사용하여 로컬 로그인 지원
+        if req_host and any(local in req_host for local in ("localhost", "127.0.0.1")):
+            callback = f"{req_scheme}://{req_host}/auth/kakao/callback"
+        elif not callback:
+            callback = f"{req_scheme}://{req_host}/auth/kakao/callback"
+
         parts = urlsplit(callback)
         if not key or urlsplit(base).scheme != "https":
             raise ValueError("SUPABASE_URL / SUPABASE_ANON_KEY 설정 필요")
@@ -60,7 +70,9 @@ def register_kakao_routes(auth_bp):
         # Always start on the callback's origin so its browser session matches.
         parts = urlsplit(callback)
         origin = f"{parts.scheme}://{parts.netloc}"
-        if request.host_url.rstrip("/") != origin:
+        req_host = request.headers.get("X-Forwarded-Host", request.host)
+        # 콜백 호스트와 현재 접속 호스트가 다를 때만 리디렉트 (무한 루프 방지)
+        if parts.netloc and req_host and req_host != parts.netloc:
             return redirect(origin + "/auth/kakao")
 
         verifier = secrets.token_urlsafe(48)
