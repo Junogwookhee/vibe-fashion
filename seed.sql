@@ -231,4 +231,38 @@ CROSS JOIN (
 INSERT INTO public.product_images (product_id, image_url, sort_order, is_primary)
 SELECT id, thumbnail_url, 0, true
 FROM public.products
-WHERE slug IN ('basic-crop-tshirt', 'wide-denim-pants', 'overfit-cotton-jacket', 'floral-midi-dress');
+WHERE slug IN (
+    'basic-crop-tshirt',
+    'wide-denim-pants',
+    'overfit-cotton-jacket',
+    'floral-midi-dress',
+    'classic-leather-totebag',
+    'minimal-chelsea-leather-boots'
+);
+
+-- 5. 고객 리뷰 초기 데이터 등록 (reviews)
+INSERT INTO public.reviews (product_id, user_id, rating, content)
+SELECT
+    p.id,
+    u.id,
+    r.rating,
+    r.content
+FROM (
+    VALUES
+        ('wide-denim-pants', 5, '핏이 정말 예술입니다! 하체 라인을 자연스럽고 슬림하게 커버해주고 사계절 내내 데일리로 입기 딱 좋아요. 강력 추천합니다.'),
+        ('basic-crop-tshirt', 5, '목 늘어남 전혀 없고 코튼 소재가 정말 탄탄합니다. 하이웨이스트 팬츠랑 매치했을 때 기장감이 완벽해요.'),
+        ('overfit-cotton-jacket', 5, '요즘 날씨에 입기 최고의 아우터입니다. 어깨 라인이 과하지 않게 떨어져서 고급스럽고 주위에서 칭찬을 정말 많이 들었어요.'),
+        ('classic-leather-totebag', 5, '가죽 텍스처가 너무 고급스럽고 13인치 노트북까지 깔끔하게 수납됩니다. 디자인, 실용성 둘 다 잡은 인생 가방이에요!'),
+        ('minimal-chelsea-leather-boots', 5, '발볼이 넓은 편인데도 하루 종일 걸어도 발이 편안해요! 가죽 질감도 은은한 광택감이 돌아서 슬랙스나 데님 어디에나 잘 어울립니다.'),
+        ('floral-midi-dress', 5, '데이트룩이나 모임룩으로 최고예요! 잔잔한 플로럴 패턴이 화사하고 허리 라인을 예쁘게 잡아줘서 인생 사진 건졌습니다.')
+) AS r(slug, rating, content)
+JOIN public.products p ON p.slug = r.slug
+CROSS JOIN (
+    SELECT id FROM public.profiles ORDER BY created_at ASC LIMIT 1
+) u
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM public.reviews existing
+    WHERE existing.product_id = p.id
+      AND existing.content = r.content
+);

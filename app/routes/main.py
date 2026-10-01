@@ -67,7 +67,7 @@ def index():
             supabase.table('reviews')
             .select('id, rating, content, created_at, products(name, thumbnail_url), profiles(full_name)')
             .order('created_at', desc=True)
-            .limit(6)
+            .limit(8)
             .execute()
         )
 
