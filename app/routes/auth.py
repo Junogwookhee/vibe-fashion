@@ -213,8 +213,14 @@ def signup():
 
     except Exception as e:
         err_str = str(e).lower()
+        err_code = getattr(e, 'code', '') or ''
         logger.error(f"[Signup Error] {e}", exc_info=True)
-        if 'already registered' in err_str or 'already exists' in err_str:
+        if (
+            'already been registered' in err_str
+            or 'already registered' in err_str
+            or 'already exists' in err_str
+            or err_code == 'email_exists'
+        ):
             return redirect(url_for('auth.signup', error='email_already_registered'))
         return redirect(url_for('auth.signup', error='unknown_error'))
 
@@ -502,4 +508,7 @@ def delete_account():
         flash("회원 탈퇴 처리 중 오류가 발생했습니다.", "danger")
         return redirect('/mypage')
 from .kakao import register_kakao_routes
+from .naver import register_naver_routes
+
 register_kakao_routes(auth_bp)
+register_naver_routes(auth_bp)

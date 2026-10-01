@@ -78,6 +78,29 @@
                         </button>
                     </form>
 
+                    <div class="d-flex align-items-center my-3">
+                        <hr class="flex-grow-1 border-light-subtle">
+                        <span class="px-2 text-muted small">또는 SNS 계정으로 간편가입</span>
+                        <hr class="flex-grow-1 border-light-subtle">
+                    </div>
+
+                    <a href="{{ url_for('auth.kakao_login') }}"
+                       class="btn w-100 py-3 rounded-pill fw-bold mb-2 d-flex align-items-center justify-content-center"
+                       style="background-color: #FEE500; color: #191919; text-decoration: none;">
+                        <svg class="me-2" width="18" height="18" viewBox="0 0 24 24" fill="#191919">
+                            <path d="M12 3c-5.52 0-10 3.58-10 8 0 2.87 1.86 5.39 4.67 6.77l-1.18 4.36c-.1.38.33.69.66.47l5.22-3.48c.21.01.42.02.63.02 5.52 0 10-3.58 10-8s-4.48-8-10-8z"/>
+                        </svg>
+                        카카오로 시작하기
+                    </a>
+                    <a href="{{ url_for('auth.naver_login') }}"
+                       class="btn w-100 py-3 rounded-pill fw-bold mb-3 d-flex align-items-center justify-content-center text-white"
+                       style="background-color: #03C75A; text-decoration: none;">
+                        <svg class="me-2" width="16" height="16" viewBox="0 0 24 24" fill="#FFFFFF">
+                            <path d="M16.273 12.845L7.376 0H0v24h7.727V11.155L16.624 24H24V0h-7.727z"/>
+                        </svg>
+                        네이버로 시작하기
+                    </a>
+
                     <div class="text-center pt-3 border-top border-light-subtle">
                         <p class="text-muted small mb-0">
                             이미 계정이 있으신가요? 
