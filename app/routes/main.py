@@ -5,6 +5,7 @@ from datetime import datetime
 from flask import Blueprint, render_template, request, redirect, url_for, flash, session
 from dotenv import load_dotenv
 from app.utils.supabase_client import get_supabase_client, get_supabase_admin_client
+from .auth import login_required
 
 # 로깅 설정
 logger = logging.getLogger(__name__)
@@ -324,23 +325,47 @@ def delete_account_alias():
     return delete_account()
 
 
-@main_bp.route('/mypage')
+@main_bp.route('/mypage', methods=['GET', 'POST'])
+@login_required
 def mypage():
     """
     마이페이지 라우트:
     - login_required: 로그인 안 되어 있으면 /auth/login으로 이동
-    - 사용자 정보 및 회원 등급, 누적 구매 금액 표시
+    - GET: 사용자 프로필 조회 (이름, 이메일, 기본 배송지) 및 탭 표시
+    - POST: 내 정보 수정 (이름, 전화번호, 기본 배송지)
     """
     user_id = session.get('user_id')
-    if not user_id:
-        return redirect(url_for('auth.login', error='login_required', next='/mypage'))
-
     user = session.get('user', {})
     profile = {}
     total_spent = 0
+    supabase = get_supabase_client()
+
+    if request.method == 'POST':
+        full_name = request.form.get('full_name', '').strip()
+        phone = request.form.get('phone', '').strip()
+        address = request.form.get('address', '').strip()
+
+        update_data = {
+            'full_name': full_name,
+            'phone': phone,
+        }
+        update_succeeded = False
+        try:
+            update_data['address'] = address
+            supabase.table('profiles').update(update_data).eq('id', user_id).execute()
+            update_succeeded = True
+            flash('회원 정보가 성공적으로 수정되었습니다.', 'success')
+        except Exception as e:
+            logger.error(f"[MyPage Update Error] {e}")
+            flash('회원 정보 수정 중 오류가 발생했습니다.', 'danger')
+
+        if update_succeeded and 'user' in session and isinstance(session['user'], dict):
+            session['user']['full_name'] = full_name
+            session.modified = True
+
+        return redirect(url_for('main.mypage'))
 
     try:
-        supabase = get_supabase_client()
         prof_res = supabase.table('profiles').select('*').eq('id', user_id).execute()
         if prof_res.data:
             profile = prof_res.data[0]

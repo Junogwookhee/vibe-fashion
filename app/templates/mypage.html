@@ -42,83 +42,106 @@
                 </div>
             </div>
 
-            <!-- 계정 정보 및 혜택 대시보드 -->
+            <!-- 우측 탭 메뉴 & 콘텐츠 -->
             <div class="col-lg-8">
-                <!-- 혜택 요약 카드 -->
-                <div class="card border-0 rounded-4 shadow-sm p-4 bg-white mb-4">
-                    <h5 class="fw-bold text-dark mb-3 d-flex align-items-center gap-2">
-                        <i class="bi bi-gem text-coral"></i>
-                        <span>나의 멤버십 혜택</span>
-                    </h5>
+                <div class="card border-0 rounded-4 shadow-sm p-4 bg-white">
+                    <!-- Bootstrap 5 nav-tabs 3개 -->
+                    <ul class="nav nav-tabs nav-fill mb-4" id="myPageTabs" role="tablist">
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link active fw-bold py-3" id="info-tab" data-bs-toggle="tab" data-bs-target="#tab-info" type="button" role="tab" aria-controls="tab-info" aria-selected="true">
+                                <i class="bi bi-person me-2"></i>내 정보
+                            </button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link fw-bold py-3 text-secondary" id="orders-tab" data-bs-toggle="tab" data-bs-target="#tab-orders" type="button" role="tab" aria-controls="tab-orders" aria-selected="false">
+                                <i class="bi bi-bag-check me-2"></i>주문 내역
+                            </button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link fw-bold py-3 text-secondary" id="refunds-tab" data-bs-toggle="tab" data-bs-target="#tab-refunds" type="button" role="tab" aria-controls="tab-refunds" aria-selected="false">
+                                <i class="bi bi-arrow-counterclockwise me-2"></i>환불 내역
+                            </button>
+                        </li>
+                    </ul>
 
-                    <div class="row g-3 text-center">
-                        <div class="col-4">
-                            <div class="p-3 rounded-3 bg-surface border border-light-subtle">
-                                <div class="very-small text-muted mb-1">보유 쿠폰</div>
-                                <div class="fs-4 fw-bold text-coral">1장</div>
-                                <div class="very-small text-muted">10% 웰컴 쿠폰</div>
+                    <!-- 탭 콘텐츠 영역 -->
+                    <div class="tab-content" id="myPageTabContent">
+                        <!-- 탭 1: 내 정보 -->
+                        <div class="tab-pane fade show active" id="tab-info" role="tabpanel" aria-labelledby="info-tab">
+                            <form action="{{ url_for('main.mypage') }}" method="POST">
+                                <div class="mb-3">
+                                    <label for="fullNameInput" class="form-label small fw-bold text-dark">이름</label>
+                                    <input type="text" class="form-control rounded-3 py-2" id="fullNameInput" name="full_name" value="{{ profile.full_name or user.full_name or '' }}" required>
+                                </div>
+
+                                <div class="mb-3">
+                                    <label for="emailInput" class="form-label small fw-bold text-dark">이메일</label>
+                                    <input type="email" class="form-control rounded-3 py-2 bg-light text-muted" id="emailInput" value="{{ profile.email or user.email or '' }}" readonly disabled>
+                                    <div class="form-text very-small text-muted">이메일 주소는 보안상 변경할 수 없습니다.</div>
+                                </div>
+
+                                <div class="mb-3">
+                                    <label for="phoneInput" class="form-label small fw-bold text-dark">연락처</label>
+                                    <input type="text" class="form-control rounded-3 py-2" id="phoneInput" name="phone" value="{{ profile.phone or '' }}" placeholder="010-0000-0000">
+                                </div>
+
+                                <div class="mb-4">
+                                    <label for="addressInput" class="form-label small fw-bold text-dark">기본 배송지</label>
+                                    <input type="text" class="form-control rounded-3 py-2" id="addressInput" name="address" value="{{ profile.address or '' }}" placeholder="기본 배송지 주소를 입력하세요">
+                                </div>
+
+                                <div class="d-flex justify-content-end gap-2 pt-2 border-top">
+                                    <button type="submit" class="btn btn-dark rounded-pill px-4 fw-bold">
+                                        <i class="bi bi-check-lg me-1"></i>정보 수정
+                                    </button>
+                                </div>
+                            </form>
+
+                            <hr class="my-4 border-light-subtle">
+
+                            <!-- 보안 및 계정 관리 -->
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div>
+                                    <div class="small fw-bold text-dark">비밀번호 관리</div>
+                                    <div class="very-small text-muted">비밀번호 재설정 이메일을 발송합니다.</div>
+                                </div>
+                                <a href="{{ url_for('auth.forgot_password', email=user.email) }}" class="btn btn-outline-dark btn-sm rounded-pill px-3 very-small">
+                                    비밀번호 변경 메일 받기
+                                </a>
+                            </div>
+
+                            <div class="d-flex justify-content-between align-items-center mt-3 pt-3 border-top border-light-subtle">
+                                <div>
+                                    <div class="small fw-bold text-danger">회원 탈퇴</div>
+                                    <div class="very-small text-muted">탈퇴 시 모든 정보와 혜택이 영구 삭제됩니다.</div>
+                                </div>
+                                <button type="button" class="btn btn-outline-danger btn-sm rounded-pill px-3 very-small" data-bs-toggle="modal" data-bs-target="#deleteAccountModal">
+                                    회원 탈퇴 신청
+                                </button>
                             </div>
                         </div>
-                        <div class="col-4">
-                            <div class="p-3 rounded-3 bg-surface border border-light-subtle">
-                                <div class="very-small text-muted mb-1">누적 구매 금액</div>
-                                <div class="fs-4 fw-bold text-dark">{{ formatted_total_spent }}</div>
-                                <div class="very-small text-muted">실결제 합계</div>
+
+                        <!-- 탭 2: 주문 내역 -->
+                        <div class="tab-pane fade text-center py-5" id="tab-orders" role="tabpanel" aria-labelledby="orders-tab">
+                            <div class="py-4">
+                                <i class="bi bi-bag-x display-4 text-muted mb-3 d-block"></i>
+                                <h6 class="fw-bold text-dark mb-1">아직 주문 내역이 없습니다</h6>
+                                <p class="text-muted small mb-4">VIBE-FASHION의 트렌디한 신상품을 지금 만나보세요.</p>
+                                <a href="{{ url_for('main.index') }}#products" class="btn btn-dark btn-sm rounded-pill px-4 fw-bold">
+                                    쇼핑 시작하기
+                                </a>
                             </div>
                         </div>
-                        <div class="col-4">
-                            <div class="p-3 rounded-3 bg-surface border border-light-subtle">
-                                <div class="very-small text-muted mb-1">배송 혜택</div>
-                                <div class="fs-4 fw-bold text-success">무료</div>
-                                <div class="very-small text-muted">전 상품 적용</div>
+
+                        <!-- 탭 3: 환불 내역 -->
+                        <div class="tab-pane fade text-center py-5" id="tab-refunds" role="tabpanel" aria-labelledby="refunds-tab">
+                            <div class="py-4">
+                                <i class="bi bi-arrow-counterclockwise display-4 text-muted mb-3 d-block"></i>
+                                <h6 class="fw-bold text-dark mb-1">아직 환불 내역이 없습니다</h6>
+                                <p class="text-muted small">진행 중이거나 완료된 반품/환불 내역이 존재하지 않습니다.</p>
                             </div>
                         </div>
                     </div>
-                </div>
-
-                <!-- 계정 기본 정보 -->
-                <div class="card border-0 rounded-4 shadow-sm p-4 bg-white">
-                    <h5 class="fw-bold text-dark mb-3 d-flex align-items-center gap-2">
-                        <i class="bi bi-shield-check text-coral"></i>
-                        <span>계정 보안 및 기본 정보</span>
-                    </h5>
-
-                    <table class="table table-borderless small mb-0">
-                        <tbody>
-                            <tr>
-                                <th class="text-muted ps-0" style="width: 140px;">성명</th>
-                                <td class="fw-semibold text-dark">{{ profile.full_name or user.full_name or '고객' }}</td>
-                            </tr>
-                            <tr>
-                                <th class="text-muted ps-0">이메일 계정</th>
-                                <td class="text-dark">{{ profile.email or user.email }}</td>
-                            </tr>
-                            <tr>
-                                <th class="text-muted ps-0">이메일 인증 상태</th>
-                                <td>
-                                    <span class="badge bg-success bg-opacity-10 text-success rounded-pill px-3 py-1 fw-bold">
-                                        <i class="bi bi-check-circle-fill me-1"></i>인증 완료
-                                    </span>
-                                </td>
-                            </tr>
-                            <tr>
-                                <th class="text-muted ps-0">비밀번호 관리</th>
-                                <td>
-                                    <a href="{{ url_for('auth.forgot_password', email=user.email) }}" class="btn btn-outline-dark btn-sm rounded-pill px-3 very-small">
-                                        비밀번호 변경 메일 받기
-                                    </a>
-                                </td>
-                            </tr>
-                            <tr>
-                                <th class="text-muted ps-0">회원 탈퇴</th>
-                                <td>
-                                    <button type="button" class="btn btn-outline-danger btn-sm rounded-pill px-3 very-small" data-bs-toggle="modal" data-bs-target="#deleteAccountModal">
-                                        회원 탈퇴 신청
-                                    </button>
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
                 </div>
             </div>
         </div>
