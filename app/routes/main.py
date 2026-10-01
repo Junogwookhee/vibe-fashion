@@ -33,7 +33,6 @@ def index():
             supabase.table('products')
             .select('id, name, description, price, sale_price, thumbnail_url, sort_order, is_active, is_featured')
             .eq('is_active', True)
-            .eq('is_featured', True)
             .order('sort_order')
             .limit(8)
             .execute()
