@@ -3,51 +3,156 @@
 {% block title %}VIBE-FASHION | 스타일을 완성하는 트렌디 패션 쇼핑몰{% endblock %}
 
 {% block content %}
-<!-- 1. 히어로 섹션 (Hero Section) -->
-<section class="hero-section text-white text-center d-flex align-items-center justify-content-center">
-    <div class="hero-overlay"></div>
-    <div class="container position-relative z-1 py-5">
-        <span class="badge bg-danger mb-3 px-3 py-2 text-uppercase fs-6">2026 S/S New Arrival</span>
-        <h1 class="display-3 fw-bold mb-3">당신의 스타일을 찾는 곳,<br class="d-none d-md-block"> VIBE-FASHION</h1>
-        <p class="lead mb-4 text-light col-lg-8 mx-auto">
-            일상 속 특별한 무드를 더해주는 감각적인 패션 아이템을 지금 가장 먼저 만나보세요.
-        </p>
-        <a href="#products" class="btn btn-light btn-lg px-4 fw-semibold shadow-sm">
-            신상품 둘러보기 <i class="bi bi-arrow-right ms-2"></i>
-        </a>
+<!-- 전역 플래시 알림 메시지 (로그인/회원가입 등) -->
+<div class="container pt-3">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                <div class="alert alert-{{ category if category != 'error' else 'danger' }} alert-dismissible fade show rounded-4 shadow-sm border-0 d-flex align-items-center justify-content-between mb-3" role="alert">
+                    <div>
+                        <i class="bi bi-check-circle-fill text-success me-2"></i><strong>{{ message }}</strong>
+                    </div>
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+</div>
+
+<!-- 1. 히어로 에디토리얼 섹션 (Hero Editorial Section) -->
+<section class="hero-luxury position-relative d-flex align-items-center justify-content-center text-center text-white">
+    <div class="hero-bg-overlay"></div>
+    <div class="hero-ambient-glow"></div>
+    
+    <div class="container position-relative z-2 py-5">
+        <div class="hero-content-box mx-auto">
+            <div class="d-inline-flex align-items-center gap-2 hero-tag mb-3 px-3 py-1 rounded-pill">
+                <span class="hero-dot"></span>
+                <span class="small fw-semibold letter-spacing-2">2026 S/S EDITORIAL CAPSULE</span>
+            </div>
+            
+            <h1 class="hero-headline mb-3">
+                BE YOUR OWN <span class="hero-highlight">VIBE</span>
+            </h1>
+            
+            <p class="hero-subtext mb-4 text-white-75 mx-auto">
+                단순한 옷을 넘어, 본연의 매력과 절제된 우아함을 완성하는 모던 실루엣.<br class="d-none d-md-block">
+                VIBE-FASHION이 제안하는 감각적인 2026 시즌 컬렉션을 지금 바로 경험해보세요.
+            </p>
+            
+            <div class="hero-btn-group d-flex justify-content-center align-items-center gap-3 flex-wrap">
+                <a href="#products" class="btn btn-hero-primary px-4 py-3 rounded-pill fw-bold">
+                    <span>신상품 둘러보기</span>
+                    <i class="bi bi-arrow-right ms-2"></i>
+                </a>
+                <a href="#lookbook" class="btn btn-hero-outline px-4 py-3 rounded-pill fw-semibold">
+                    <i class="bi bi-play-circle me-2"></i>
+                    <span>시즌 룩북 보기</span>
+                </a>
+            </div>
+
+            <!-- 히어로 신뢰 지표 바 -->
+            <div class="hero-metrics-bar mt-5 pt-4 border-top border-white border-opacity-10 row g-3 text-center">
+                <div class="col-4">
+                    <div class="metric-number">4.9 / 5.0</div>
+                    <div class="metric-label">고객 평점 만족도</div>
+                </div>
+                <div class="col-4 border-start border-end border-white border-opacity-10">
+                    <div class="metric-number">100%</div>
+                    <div class="metric-label">전 상품 무료 배송</div>
+                </div>
+                <div class="col-4">
+                    <div class="metric-number">DAILY</div>
+                    <div class="metric-label">트렌디 신상 업데이트</div>
+                </div>
+            </div>
+        </div>
     </div>
 </section>
 
-<!-- 2. 신상품 카드 섹션 (더미 상품 4개) -->
-<section id="products" class="py-5 bg-light">
+<!-- 2. 카테고리 퀵 바 (Category Quick Filter Chips) -->
+<section class="category-nav-bar py-3 bg-white border-bottom">
+    <div class="container">
+        <div class="d-flex align-items-center justify-content-center gap-2 overflow-auto py-1 filter-chips-wrapper">
+            <button class="filter-chip active" type="button">전체보기</button>
+            <button class="filter-chip" type="button">아우터 (Outer)</button>
+            <button class="filter-chip" type="button">상의 (Top)</button>
+            <button class="filter-chip" type="button">하의 (Bottom)</button>
+            <button class="filter-chip" type="button">원피스 (Dress)</button>
+            <button class="filter-chip" type="button">악세서리 (Acc)</button>
+            <button class="filter-chip" type="button">가방/신발</button>
+        </div>
+    </div>
+</section>
+
+<!-- 3. 신상품 컬렉션 섹션 (Curated Products Section) -->
+<section id="products" class="py-5 bg-surface">
     <div class="container py-4">
-        <div class="text-center mb-5">
-            <h2 class="fw-bold">새로운 신상품 컬렉션</h2>
-            <p class="text-muted">VIBE-FASHION이 엄선한 이번 시즌 필수 아이템입니다.</p>
-            <div class="divider mx-auto"></div>
+        <!-- 섹션 헤더 -->
+        <div class="section-header text-center mb-5">
+            <span class="section-badge text-uppercase">CURATED COLLECTION</span>
+            <h2 class="section-title mt-2 mb-3">새로운 신상품 컬렉션</h2>
+            <p class="section-desc text-muted mx-auto">
+                클래식한 미니멀리즘과 세련된 디테일이 조화를 이루는 이번 시즌 핵심 아이템입니다.
+            </p>
+            <div class="section-divider mx-auto"></div>
         </div>
 
+        <!-- 상품 카드 그리드 (6개 아이템: 3열 x 2행 레이아웃) -->
         <div class="row g-4">
             {% for item in products %}
-            <div class="col-12 col-sm-6 col-lg-3">
-                <div class="card product-card h-100 shadow-sm border-0">
-                    <div class="product-img-wrapper">
-                        <!-- 상품 썸네일 이미지 -->
-                        <img src="{{ item.thumbnail_url }}" class="card-img-top product-img" alt="{{ item.name }}" loading="lazy">
+            <div class="col-12 col-md-6 col-lg-4">
+                <div class="card product-card-luxury h-100 border-0">
+                    <!-- 상품 이미지 래퍼 -->
+                    <div class="product-media-box">
+                        <a href="{{ url_for('main.product_detail', slug_or_id=item.slug or item.id) }}" class="d-block w-100 h-100 text-decoration-none">
+                            <img src="{{ item.thumbnail_url }}" class="product-media-img" alt="{{ item.name }}" loading="lazy">
+                        </a>
+                        
+                        <!-- 뱃지 영역 -->
+                        <div class="product-badges-wrap">
+                            {% if item.discount_percent %}
+                                <span class="badge-sale">{{ item.discount_percent }}% OFF</span>
+                            {% else %}
+                                <span class="badge-new">NEW</span>
+                            {% endif %}
+                        </div>
+
+                        <!-- 위시리스트 버튼 -->
+                        <button class="btn-wishlist" type="button" onclick="toggleWishlist(this, '{{ item.name }}')" title="위시리스트 추가">
+                            <i class="bi bi-heart"></i>
+                        </button>
+
+                        <!-- 이미지 위 빠른 담기 버튼 -->
+                        <button class="btn-quick-cart" type="button" onclick="addToCart('{{ item.name }}')">
+                            <i class="bi bi-bag-plus me-1"></i> 빠른 담기
+                        </button>
                     </div>
-                    <div class="card-body d-flex flex-column">
-                        <h5 class="card-title fw-bold text-truncate mb-1">{{ item.name }}</h5>
-                        <p class="card-text text-muted small flex-grow-1">{{ item.description }}</p>
-                        <div class="d-flex justify-content-between align-items-center pt-3 border-top">
-                            <div>
+
+                    <!-- 상품 상세 정보 -->
+                    <div class="card-body p-4 d-flex flex-column">
+                        <div class="product-meta-category small text-muted text-uppercase mb-1">
+                            VIBE ESSENTIALS
+                        </div>
+                        <h5 class="product-name fw-bold mb-2">
+                            <a href="{{ url_for('main.product_detail', slug_or_id=item.slug or item.id) }}" class="text-decoration-none text-dark">{{ item.name }}</a>
+                        </h5>
+                        <p class="product-desc text-muted small flex-grow-1 mb-3">
+                            {{ item.description }}
+                        </p>
+
+                        <!-- 가격 영역 -->
+                        <div class="d-flex justify-content-between align-items-center pt-3 border-top border-light-subtle">
+                            <div class="price-box">
                                 {% if item.sale_price %}
-                                    <span class="text-muted text-decoration-line-through small me-1">{{ item.price }}</span>
-                                    <span class="fs-5 fw-bold text-danger">{{ item.sale_price }}</span>
+                                    <div class="text-muted text-decoration-line-through small price-original">{{ item.price }}</div>
+                                    <div class="price-current text-coral fw-bold fs-5">{{ item.sale_price }}</div>
                                 {% else %}
-                                    <span class="fs-5 fw-bold text-danger">{{ item.price }}</span>
+                                    <div class="price-current fw-bold fs-5 text-dark">{{ item.price }}</div>
                                 {% endif %}
                             </div>
-                            <button class="btn btn-outline-dark btn-sm rounded-pill px-3" onclick="addToCart('{{ item.name }}')">
+                            
+                            <button class="btn btn-card-add rounded-pill px-3 py-2 btn-sm fw-semibold" onclick="addToCart('{{ item.name }}')">
                                 <i class="bi bi-cart-plus me-1"></i>담기
                             </button>
                         </div>
@@ -56,36 +161,269 @@
             </div>
             {% else %}
             <div class="col-12 text-center py-5">
-                <p class="text-muted fs-5">등록된 신상품이 없습니다.</p>
+                <div class="py-5 bg-white rounded-4 shadow-sm">
+                    <i class="bi bi-bag-x text-muted fs-1 mb-3 d-block"></i>
+                    <h5 class="fw-bold">등록된 신상품이 없습니다.</h5>
+                    <p class="text-muted small">새로운 컬렉션이 곧 입고될 예정입니다.</p>
+                </div>
             </div>
             {% endfor %}
         </div>
     </div>
 </section>
 
-<!-- 3. 브랜드 매력 포인트 섹션 -->
-<section id="about" class="py-5 bg-white">
-    <div class="container text-center py-3">
+<!-- 3.5 고객 평점 및 생생 리뷰 게시판 (Customer Reviews & Ratings Board) -->
+<section id="reviews" class="py-5 bg-white border-top border-bottom">
+    <div class="container py-4">
+        <!-- 리뷰 헤더 및 평점 요약 배너 -->
+        <div class="review-summary-banner p-4 p-md-5 rounded-4 mb-5 text-white">
+            <div class="row align-items-center g-4">
+                <div class="col-lg-5 text-center text-lg-start border-lg-end border-white border-opacity-10 pe-lg-5">
+                    <span class="badge bg-danger rounded-pill px-3 py-1 fw-bold text-uppercase mb-2">REAL REVIEWS</span>
+                    <h2 class="display-6 fw-bold mb-2">고객 만족도 및 리뷰 평점</h2>
+                    <p class="text-white-75 small mb-0">
+                        VIBE-FASHION을 직접 경험한 고객님들의 솔직하고 생생한 리얼 착용 후기입니다.
+                    </p>
+                </div>
+                <div class="col-lg-4 text-center">
+                    <div class="d-inline-flex align-items-baseline gap-2 mb-1">
+                        <span class="display-3 fw-bold text-white font-serif">{{ avg_rating }}</span>
+                        <span class="text-white-50 fs-5">/ 5.0</span>
+                    </div>
+                    <div class="review-stars-large text-warning fs-4 mb-1">
+                        <i class="bi bi-star-fill"></i>
+                        <i class="bi bi-star-fill"></i>
+                        <i class="bi bi-star-fill"></i>
+                        <i class="bi bi-star-fill"></i>
+                        <i class="bi bi-star-fill"></i>
+                    </div>
+                    <div class="text-white-75 small">총 <strong>{{ total_reviews }}건</strong>의 실제 구매 리뷰</div>
+                </div>
+                <div class="col-lg-3 text-center text-lg-end">
+                    <button class="btn btn-review-write px-4 py-3 rounded-pill fw-bold shadow-lg" type="button" data-bs-toggle="modal" data-bs-target="#reviewModal">
+                        <i class="bi bi-pencil-square me-2"></i>리뷰 작성하기
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 고객 리뷰 카드 그리드 -->
         <div class="row g-4">
-            <div class="col-md-4">
-                <div class="p-3">
-                    <i class="bi bi-truck fs-1 text-primary mb-3 d-block"></i>
-                    <h5 class="fw-bold">전 상품 무료 배송</h5>
-                    <p class="text-muted small">모든 주문 건에 대해 안전하고 빠른 무료 배송을 지원합니다.</p>
+            {% for r in reviews %}
+            <div class="col-12 col-md-6 col-lg-3">
+                <div class="review-card h-100 p-4 rounded-4 bg-surface border border-light-subtle d-flex flex-column justify-content-between">
+                    <div>
+                        <!-- 별점 및 등록일 -->
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <div class="review-stars text-warning fs-6">
+                                {% for _ in range(r.rating) %}
+                                    <i class="bi bi-star-fill"></i>
+                                {% endfor %}
+                            </div>
+                            <span class="text-muted small">{{ r.created_at }}</span>
+                        </div>
+
+                        <!-- 리뷰 본문 -->
+                        <p class="review-text text-dark small mb-3">
+                            "{{ r.content }}"
+                        </p>
+                    </div>
+
+                    <!-- 연결된 상품 정보 및 작성자 -->
+                    <div class="review-author-wrap pt-3 border-top border-light-subtle d-flex align-items-center justify-content-between">
+                        <div class="d-flex align-items-center gap-2">
+                            {% if r.product_img %}
+                                <img src="{{ r.product_img }}" class="review-prod-thumb rounded-3" alt="{{ r.product_name }}">
+                            {% endif %}
+                            <div class="overflow-hidden">
+                                <div class="review-prod-name fw-bold small text-truncate" style="max-width: 140px;">{{ r.product_name }}</div>
+                                <div class="text-muted very-small"><i class="bi bi-check-circle-fill text-success me-1"></i>구매 고객</div>
+                            </div>
+                        </div>
+                        <div class="review-author-name text-muted small fw-semibold flex-shrink-0">
+                            {{ r.author }}
+                        </div>
+                    </div>
                 </div>
             </div>
-            <div class="col-md-4">
-                <div class="p-3">
-                    <i class="bi bi-shield-check fs-1 text-success mb-3 d-block"></i>
-                    <h5 class="fw-bold">100% 정품 보장</h5>
-                    <p class="text-muted small">믿을 수 있는 품질과 검증된 패션 브랜드 아이템만 취급합니다.</p>
+            {% endfor %}
+        </div>
+    </div>
+</section>
+
+<!-- 리뷰 작성 모달 창 -->
+<div class="modal fade" id="reviewModal" tabindex="-1" aria-labelledby="reviewModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content rounded-4 border-0 shadow-2xl">
+            <div class="modal-header bg-dark text-white p-4">
+                <h5 class="modal-title fw-bold" id="reviewModalLabel">
+                    <i class="bi bi-star-fill text-warning me-2"></i>고객 평점 및 리뷰 작성
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form action="{{ url_for('main.add_review') }}" method="POST">
+                <div class="modal-body p-4">
+                    <!-- 상품 선택 -->
+                    <div class="mb-3">
+                        <label class="form-label fw-bold small">구매하신 상품 선택</label>
+                        <select name="product_id" class="form-select rounded-3 py-2" required>
+                            {% for p in products %}
+                                <option value="{{ p.id }}">{{ p.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <!-- 별점 선택 -->
+                    <div class="mb-3">
+                        <label class="form-label fw-bold small">상품 만족도 평점</label>
+                        <div class="d-flex gap-3 align-items-center pt-1">
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="rating" id="r5" value="5" checked>
+                                <label class="form-check-label small" for="r5">⭐⭐⭐⭐⭐ (5점)</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="rating" id="r4" value="4">
+                                <label class="form-check-label small" for="r4">⭐⭐⭐⭐ (4점)</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="rating" id="r3" value="3">
+                                <label class="form-check-label small" for="r3">⭐⭐⭐ (3점)</label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 작성자 이름 -->
+                    <div class="mb-3">
+                        <label class="form-label fw-bold small">작성자 닉네임 (선택)</label>
+                        <input type="text" name="author_name" class="form-control rounded-3 py-2" placeholder="예: 김민지">
+                    </div>
+
+                    <!-- 리뷰 내용 -->
+                    <div class="mb-2">
+                        <label class="form-label fw-bold small">솔직한 착용 후기</label>
+                        <textarea name="content" class="form-control rounded-3" rows="4" placeholder="소재, 핏감, 착용감 등 만족하셨던 점을 자유롭게 남겨주세요." required></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer p-4 border-top bg-light">
+                    <button type="button" class="btn btn-outline-secondary rounded-pill px-4" data-bs-dismiss="modal">취소</button>
+                    <button type="submit" class="btn btn-dark rounded-pill px-4 fw-bold">리뷰 등록하기</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- 4. 시즌 룩북 큐레이션 배너 (Editorial Lookbook Section) -->
+<section id="lookbook" class="py-5 bg-white overflow-hidden">
+    <div class="container py-3">
+        <div class="lookbook-banner rounded-4 p-4 p-lg-5 position-relative text-white">
+            <div class="lookbook-overlay"></div>
+            <div class="row align-items-center position-relative z-2 g-4">
+                <div class="col-lg-7">
+                    <span class="badge bg-light text-dark px-3 py-2 rounded-pill fw-bold text-uppercase mb-3">2026 S/S LOOKBOOK</span>
+                    <h2 class="display-5 fw-bold mb-3">Daily Elegance, Effortless Fit</h2>
+                    <p class="lead text-white-75 mb-4">
+                        단정하지만 지루하지 않은, 편안하지만 감각적인 스타일링.<br class="d-none d-md-block">
+                        VIBE-FASHION의 감각으로 재해석한 이번 시즌 시그니처 룩북을 감상해 보세요.
+                    </p>
+                    <a href="#products" class="btn btn-light px-4 py-3 rounded-pill fw-bold text-dark shadow-sm">
+                        <span>컬렉션 전체보기</span>
+                        <i class="bi bi-arrow-up-right ms-2"></i>
+                    </a>
+                </div>
+                <div class="col-lg-5 text-center text-lg-end">
+                    <div class="lookbook-badge-box d-inline-block text-start p-4 rounded-4 bg-dark bg-opacity-50 backdrop-blur border border-white border-opacity-10">
+                        <div class="text-coral fw-bold fs-4 mb-1">STYLING TIP</div>
+                        <p class="small text-white-75 mb-2">
+                            오버핏 자켓과 와이드 데님의 감각적인 매치로 편안하면서도 세련된 도심 속 실루엣을 완성하세요.
+                        </p>
+                        <span class="small text-white-50">#Minimal #Contemporary #VibeDaily</span>
+                    </div>
                 </div>
             </div>
-            <div class="col-md-4">
-                <div class="p-3">
-                    <i class="bi bi-arrow-repeat fs-1 text-warning mb-3 d-block"></i>
-                    <h5 class="fw-bold">간편한 교환 & 반품</h5>
-                    <p class="text-muted small">구매 후 7일 이내 언제든지 편리하고 빠른 교환/반품이 가능합니다.</p>
+        </div>
+    </div>
+</section>
+
+<!-- 5. 브랜드 핵심 가치 (Brand Values Section) -->
+<section id="brand-values" class="py-5 bg-surface">
+    <div class="container py-3">
+        <div class="text-center mb-5">
+            <span class="section-badge">WHY CHOOSE US</span>
+            <h2 class="section-title mt-2">VIBE-FASHION의 약속</h2>
+            <div class="section-divider mx-auto"></div>
+        </div>
+
+        <div class="row g-4 text-center">
+            <div class="col-md-6 col-lg-3">
+                <div class="value-card p-4 rounded-4 bg-white h-100 shadow-sm border border-light-subtle">
+                    <div class="value-icon-box mb-3 mx-auto">
+                        <i class="bi bi-box-seam"></i>
+                    </div>
+                    <h5 class="fw-bold mb-2">전 상품 무료 배송</h5>
+                    <p class="text-muted small mb-0">
+                        금액에 상관없이 전 품목 우체국/CJ 안전 무료 배송 및 실시간 트래킹을 제공합니다.
+                    </p>
+                </div>
+            </div>
+            <div class="col-md-6 col-lg-3">
+                <div class="value-card p-4 rounded-4 bg-white h-100 shadow-sm border border-light-subtle">
+                    <div class="value-icon-box mb-3 mx-auto">
+                        <i class="bi bi-award"></i>
+                    </div>
+                    <h5 class="fw-bold mb-2">100% 프리미엄 소재</h5>
+                    <p class="text-muted small mb-0">
+                        엄격한 원단 퀄리티 검수를 거쳐 오래 입어도 핏과 형태가 무너지지 않는 옷을 만듭니다.
+                    </p>
+                </div>
+            </div>
+            <div class="col-md-6 col-lg-3">
+                <div class="value-card p-4 rounded-4 bg-white h-100 shadow-sm border border-light-subtle">
+                    <div class="value-icon-box mb-3 mx-auto">
+                        <i class="bi bi-arrow-left-right"></i>
+                    </div>
+                    <h5 class="fw-bold mb-2">7일 안심 무료 반품</h5>
+                    <p class="text-muted small mb-0">
+                        사이즈 고민 없이 마음 편히 입어보실 수 있도록 7일 이내 간편 교환 및 반품을 보장합니다.
+                    </p>
+                </div>
+            </div>
+            <div class="col-md-6 col-lg-3">
+                <div class="value-card p-4 rounded-4 bg-white h-100 shadow-sm border border-light-subtle">
+                    <div class="value-icon-box mb-3 mx-auto">
+                        <i class="bi bi-shield-check"></i>
+                    </div>
+                    <h5 class="fw-bold mb-2">안전 에스크로 결제</h5>
+                    <p class="text-muted small mb-0">
+                        고객님의 소중한 거래를 보호하는 공식 금융 에스크로 결제 시스템이 적용되어 있습니다.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- 6. 뉴스레터 & VIP 혜택 신청 섹션 -->
+<section class="py-5 bg-white border-top">
+    <div class="container py-4">
+        <div class="newsletter-card rounded-4 p-4 p-lg-5 text-center mx-auto text-white position-relative overflow-hidden">
+            <div class="newsletter-overlay"></div>
+            <div class="position-relative z-2 max-w-600 mx-auto">
+                <span class="badge bg-danger rounded-pill px-3 py-1 fw-bold mb-3">VIP MEMBERSHIP</span>
+                <h2 class="fw-bold mb-2">첫 구매 10% 웰컴 쿠폰 받기</h2>
+                <p class="text-white-75 small mb-4">
+                    VIBE-FASHION의 신규 컬렉션 런칭 소식과 회원 전용 비공개 시크릿 세일 혜택을 가장 먼저 받아보세요.
+                </p>
+                <div class="d-flex gap-3 justify-content-center align-items-center flex-wrap">
+                    <a href="{{ url_for('auth.signup') }}" class="btn btn-danger rounded-pill px-4 py-3 fw-bold shadow-lg">
+                        <i class="bi bi-person-plus me-1"></i>무료 회원가입하고 쿠폰 받기
+                    </a>
+                    <a href="{{ url_for('auth.login') }}" class="btn btn-outline-light rounded-pill px-4 py-3 fw-semibold">
+                        <i class="bi bi-box-arrow-in-right me-1"></i>기존 계정으로 로그인
+                    </a>
+                </div>
+                <div class="small text-white-50 mt-3">
+                    <i class="bi bi-shield-check me-1"></i>간편 회원가입으로 10초 만에 혜택을 받으실 수 있습니다.
                 </div>
             </div>
         </div>
