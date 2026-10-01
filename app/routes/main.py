@@ -189,29 +189,32 @@ def add_review():
     return redirect(url_for('main.index', _anchor='reviews'))
 
 
+@main_bp.route('/products/<product_id>')
 @main_bp.route('/product/<slug_or_id>')
-def product_detail(slug_or_id):
+def product_detail(product_id=None, slug_or_id=None):
     """
-    상품 상세 페이지 라우트:
-    - slug 또는 UUID id로 상품 단일 조회
-    - 상품 관련 옵션(product_options) 및 추가 이미지(product_images) 조회
-    - 함께 코디할 연관 상품(related_products) 조회
+    상품 상세 페이지 라우트: GET /products/<product_id> (및 GET /product/<slug_or_id>)
+    - Supabase products 테이블에서 product_id(또는 slug)로 상품 정보 조회
+    - 상품 이미지, 이름, 가격(할인가/정가), 설명 표시를 위한 데이터 포맷팅
+    - product_options 테이블에서 해당 상품의 색상(color) 목록을 DISTINCT로 조회
+    - 갤러리 이미지(product_images) 및 연관 상품 추천 목록 조회
     """
     try:
         supabase = get_supabase_client()
+        target = product_id or slug_or_id
 
-        # 1. slug로 먼저 조회 시도, 없으면 id로 조회
+        # 1. Supabase에서 id(UUID) 또는 slug로 상품 정보 조회
         prod_res = (
             supabase.table('products')
             .select('*')
-            .eq('slug', slug_or_id)
+            .eq('id', target)
             .execute()
         )
         if not prod_res.data:
             prod_res = (
                 supabase.table('products')
                 .select('*')
-                .eq('id', slug_or_id)
+                .eq('slug', target)
                 .execute()
             )
 
@@ -220,6 +223,9 @@ def product_detail(slug_or_id):
             return redirect(url_for('main.index'))
 
         raw_prod = prod_res.data[0]
+        actual_product_id = raw_prod.get('id')
+
+        # 가격 및 할인율 포맷팅 계산
         raw_price = float(raw_prod.get('price') or 0)
         formatted_price = f"{int(raw_price):,}원"
 
@@ -233,7 +239,7 @@ def product_detail(slug_or_id):
             discount_percent = int(round((1 - (sale_val / raw_price)) * 100))
 
         product = {
-            'id': raw_prod.get('id'),
+            'id': actual_product_id,
             'name': raw_prod.get('name'),
             'slug': raw_prod.get('slug'),
             'description': raw_prod.get('description') or '',
@@ -244,21 +250,31 @@ def product_detail(slug_or_id):
             'thumbnail_url': raw_prod.get('thumbnail_url') or 'https://images.unsplash.com/photo-1523381210434-271e8be1f52b?auto=format&fit=crop&w=800&q=80',
         }
 
-        # 2. 상품 옵션 목록 조회
-        opts_res = (
+        # 2. product_options 테이블에서 해당 상품의 색상(color) 목록을 DISTINCT로 조회
+        # (color / size / stock 컬럼 사용)
+        colors_res = (
             supabase.table('product_options')
-            .select('*')
-            .eq('product_id', product['id'])
+            .select('color')
+            .eq('product_id', actual_product_id)
+            .not_.is_('color', 'null')
             .order('id')
             .execute()
         )
-        options = opts_res.data or []
+
+        # 중복 제거 (순서 보장)
+        colors = []
+        seen_colors = set()
+        for row in (colors_res.data or []):
+            c = (row.get('color') or '').strip()
+            if c and c not in seen_colors:
+                seen_colors.add(c)
+                colors.append(c)
 
         # 3. 상품 추가 갤러리 이미지 조회
         imgs_res = (
             supabase.table('product_images')
             .select('*')
-            .eq('product_id', product['id'])
+            .eq('product_id', actual_product_id)
             .order('sort_order')
             .execute()
         )
@@ -266,11 +282,11 @@ def product_detail(slug_or_id):
         if not images:
             images = [{'image_url': product['thumbnail_url']}]
 
-        # 4. 연관 상품 추천 (현재 상품 제외한 다른 신상품 4개)
+        # 4. 연관 상품 추천 (현재 상품 제외한 다른 활성 상품 4개)
         related_res = (
             supabase.table('products')
             .select('id, name, slug, price, sale_price, thumbnail_url')
-            .neq('id', product['id'])
+            .neq('id', actual_product_id)
             .eq('is_active', True)
             .limit(4)
             .execute()
@@ -289,10 +305,111 @@ def product_detail(slug_or_id):
         return render_template(
             'product_detail.html',
             product=product,
-            options=options,
+            colors=colors,
             images=images,
             related_products=related_products
         )
+
+    except Exception as e:
+        logger.error(f"[Product Detail Error] {e}", exc_info=True)
+        return redirect(url_for('main.index'))
+
+
+@main_bp.route('/api/products/<product_id>/sizes')
+def product_sizes_api(product_id):
+    """
+    상품 상세 페이지에서 색상 선택 시 호출되는 사이즈 및 재고 조회 API:
+    - GET /api/products/<product_id>/sizes?color=<선택한 색상>
+    - product_options 테이블에서 product_id + color로 필터링
+    - [{"size": "S", "stock": 3}, {"size": "M", "stock": 0}] 형태의 JSON 배열 반환
+    """
+    try:
+        supabase = get_supabase_client()
+        color = request.args.get('color', '').strip()
+
+        # target_product_id 확인 (UUID 또는 slug 지원)
+        target_product_id = product_id
+        if len(product_id) != 36:
+            prod_lookup = supabase.table('products').select('id').eq('slug', product_id).execute()
+            if prod_lookup.data:
+                target_product_id = prod_lookup.data[0]['id']
+
+        # product_options에서 product_id + color로 필터링
+        query = (
+            supabase.table('product_options')
+            .select('size, stock')
+            .eq('product_id', target_product_id)
+        )
+
+        if color:
+            query = query.eq('color', color)
+
+        # 조회 실행 (id 순 정렬)
+        res = query.order('id').execute()
+        raw_options = res.data or []
+
+        # size, stock 형태의 딕셔너리 리스트로 변환
+        sizes = [
+            {
+                'size': item.get('size'),
+                'stock': int(item.get('stock') or 0)
+            }
+            for item in raw_options
+        ]
+
+        # JSON 배열 반환 (HTTP 200)
+        return sizes, 200
+
+    except Exception as e:
+        logger.error(f"[Product Sizes API Error] {e}", exc_info=True)
+        return [], 500
+
+
+@main_bp.route('/products/<product_id>/options')
+@main_bp.route('/api/products/<product_id>/options')
+def product_options_api(product_id):
+    """
+    선택된 상품 및 색상에 해당하는 사이즈와 재고 목록을 반환하는 API:
+    - query parameter: color (선택 사항)
+    - 같은 색상이라도 사이즈별 재고가 다름을 반영
+    - JavaScript(fetch)로 호출되어 사이즈 드롭다운 동적 업데이트에 사용
+    """
+    try:
+        supabase = get_supabase_client()
+        color = request.args.get('color', '').strip()
+
+        # target_product_id 찾기 (UUID가 아닌 slug가 전달된 경우 지원)
+        target_product_id = product_id
+        if len(product_id) != 36:
+            prod_lookup = supabase.table('products').select('id').eq('slug', product_id).execute()
+            if prod_lookup.data:
+                target_product_id = prod_lookup.data[0]['id']
+
+        query = (
+            supabase.table('product_options')
+            .select('id, product_id, color, size, stock, additional_price')
+            .eq('product_id', target_product_id)
+        )
+
+        if color:
+            query = query.eq('color', color)
+
+        res = query.order('id').execute()
+        options = res.data or []
+
+        return {
+            'success': True,
+            'product_id': target_product_id,
+            'color': color,
+            'options': options
+        }, 200
+
+    except Exception as e:
+        logger.error(f"[Product Options API Error] {e}", exc_info=True)
+        return {
+            'success': False,
+            'error': '상품 옵션을 조회하는 중 오류가 발생했습니다.'
+        }, 500
 
     except Exception as e:
         logger.error(f"[Product Detail Error] {e}", exc_info=True)
