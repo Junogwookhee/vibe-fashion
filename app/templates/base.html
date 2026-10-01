@@ -64,6 +64,7 @@
                     {% endif %}
                     <a class="btn btn-cart-luxury position-relative d-inline-flex align-items-center px-2 py-1" href="#products" role="button">
                         <i class="bi bi-bag"></i>
+                        <span class="badge rounded-pill bg-danger cart-count-badge position-absolute top-0 start-100 translate-middle d-none">0</span>
                     </a>
                 </div>
 
@@ -107,7 +108,7 @@
                         <a class="btn btn-cart-luxury position-relative d-inline-flex align-items-center gap-2" href="#products" role="button" id="cartNavBtn">
                             <i class="bi bi-bag"></i>
                             <span class="cart-text">CART</span>
-                            <span id="cartBadge" class="badge rounded-pill bg-danger cart-pill d-none">0</span>
+                            <span id="cartBadge" class="badge rounded-pill bg-danger cart-pill cart-count-badge d-none">0</span>
                         </a>
 
                         <!-- 데스크톱 회원 로그인/사용자 정보 영역 -->
@@ -255,15 +256,34 @@
         let cartCount = 0;
         let wishCount = 0;
 
-        function addToCart(itemName) {
-            cartCount++;
-            const badge = document.getElementById('cartBadge');
-            if (badge) {
+        try {
+            cartCount = parseInt(localStorage.getItem('cartCount'), 10) || 0;
+        } catch (error) {
+            cartCount = 0;
+        }
+
+        function updateCartBadges() {
+            document.querySelectorAll('.cart-count-badge').forEach(badge => {
                 badge.textContent = cartCount;
-                badge.classList.remove('d-none');
+                badge.classList.toggle('d-none', cartCount === 0);
+            });
+        }
+
+        updateCartBadges();
+
+        function addToCart(itemName, quantity = 1) {
+            const addedQuantity = Math.max(1, parseInt(quantity, 10) || 1);
+            cartCount += addedQuantity;
+            try {
+                localStorage.setItem('cartCount', String(cartCount));
+            } catch (error) {
+                // 저장소를 사용할 수 없는 경우에도 현재 페이지의 카운트는 갱신합니다.
+            }
+            updateCartBadges();
+            document.querySelectorAll('.cart-count-badge').forEach(badge => {
                 badge.classList.add('badge-bounce');
                 setTimeout(() => badge.classList.remove('badge-bounce'), 400);
-            }
+            });
 
             const toastElem = document.getElementById('cartToast');
             const toastName = document.getElementById('toastItemName');

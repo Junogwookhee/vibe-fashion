@@ -293,6 +293,9 @@
                 optElem.value = sizeName;
                 optElem.dataset.size = sizeName;
                 optElem.dataset.stock = stock;
+                if (item.id) {
+                    optElem.dataset.optionId = item.id;
+                }
 
                 // stock이 0인 항목은 옵션 텍스트에 "(품절)" 표시 + disabled 처리
                 if (stock <= 0) {
@@ -408,12 +411,15 @@
      * 장바구니 담기 버튼 클릭 핸들러
      * - 필수 색상 및 사이즈 선택 여부 검증
      * - 재고 수량 초과 및 품절 여부 검증
-     * - 검증 통과 시 base.html의 addToCart 함수 호출
+     * - POST /cart/add API를 호출하여 DB 장바구니에 담기
+     * - 미로그인 시 /auth/login 으로 이동
+     * - 성공 시 base.html의 addToCart 토스트 및 카운트 연동
      */
-    function handleDetailAddToCart() {
+    async function handleDetailAddToCart() {
         const colorSelect = document.getElementById('colorSelect');
         const sizeSelect = document.getElementById('sizeSelect');
         const qtyInput = document.getElementById('purchaseQty');
+        const btnAddToCart = document.getElementById('btnAddToCart');
 
         // 1. 색상 선택 검증
         if (colorSelect && colorSelect.options.length > 1 && !colorSelect.value) {
@@ -438,6 +444,7 @@
         const qty = parseInt(qtyInput.value) || 1;
         const colorVal = colorSelect && colorSelect.value ? colorSelect.value : '';
         const sizeVal = selectedOption ? (selectedOption.dataset.size || '') : '';
+        const optionId = selectedOption ? selectedOption.dataset.optionId : null;
 
         // 옵션 문구 포맷팅
         let optDesc = '';
@@ -449,8 +456,49 @@
             optDesc = ` (${qty}개)`;
         }
 
-        // 장바구니 담기 실행 (base.html의 토스트 및 카운트 연동)
-        addToCart(PRODUCT_NAME + optDesc);
+        // 옵션 ID가 존재하는 경우 POST /cart/add 서버 통신 진행
+        if (optionId) {
+            try {
+                if (btnAddToCart) btnAddToCart.disabled = true;
+
+                const response = await fetch('/cart/add', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        product_option_id: optionId,
+                        quantity: qty
+                    })
+                });
+
+                // 로그인 안 한 경우 401 및 redirect_url 안내
+                if (response.status === 401) {
+                    const data = await response.json().catch(() => ({}));
+                    alert(data.error || '로그인이 필요한 서비스입니다.');
+                    window.location.href = data.redirect_url || '/auth/login';
+                    return;
+                }
+
+                const data = await response.json();
+                if (response.ok && data.success) {
+                    // 성공 시 장바구니 토스트 알림 및 숫자 증가
+                    addToCart(PRODUCT_NAME + optDesc, qty);
+                } else {
+                    // 재고 부족 등의 에러 처리
+                    alert(data.error || '장바구니 담기에 실패했습니다.');
+                }
+            } catch (err) {
+                console.error('[Add to cart error]', err);
+                alert('장바구니 담기 요청 중 통신 오류가 발생했습니다.');
+            } finally {
+                if (btnAddToCart) btnAddToCart.disabled = false;
+            }
+        } else {
+            // 단일 상품이거나 옵션 ID가 없는 경우 프론트엔드 카트 반영
+            addToCart(PRODUCT_NAME + optDesc, qty);
+        }
     }
 
     /**
