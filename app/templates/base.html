@@ -256,12 +256,6 @@
         let cartCount = 0;
         let wishCount = 0;
 
-        try {
-            cartCount = parseInt(localStorage.getItem('cartCount'), 10) || 0;
-        } catch (error) {
-            cartCount = 0;
-        }
-
         function updateCartBadges() {
             document.querySelectorAll('.cart-count-badge').forEach(badge => {
                 badge.textContent = cartCount;
@@ -270,6 +264,28 @@
         }
 
         updateCartBadges();
+
+        // DB에 저장된 장바구니 수량을 기준으로 배지를 동기화합니다.
+        async function syncCartCountFromServer() {
+            try {
+                const response = await fetch('/cart/count', {
+                    headers: { 'Accept': 'application/json' }
+                });
+                if (!response.ok) throw new Error('장바구니 수량 조회에 실패했습니다.');
+                const data = await response.json();
+                cartCount = data.success ? (parseInt(data.count, 10) || 0) : 0;
+                try {
+                    localStorage.setItem('cartCount', String(cartCount));
+                } catch (error) {
+                    // 저장소 사용이 불가능해도 서버 기준 배지는 표시합니다.
+                }
+            } catch (error) {
+                cartCount = 0;
+            }
+            updateCartBadges();
+        }
+
+        syncCartCountFromServer();
 
         function addToCart(itemName, quantity = 1) {
             const addedQuantity = Math.max(1, parseInt(quantity, 10) || 1);
@@ -284,6 +300,7 @@
                 badge.classList.add('badge-bounce');
                 setTimeout(() => badge.classList.remove('badge-bounce'), 400);
             });
+            syncCartCountFromServer();
 
             const toastElem = document.getElementById('cartToast');
             const toastName = document.getElementById('toastItemName');

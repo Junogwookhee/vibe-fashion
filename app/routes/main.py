@@ -710,6 +710,28 @@ def delete_cart_item(cart_id):
         }), 500
 
 
+@main_bp.route('/cart/count', methods=['GET'])
+def cart_count_api():
+    """로그인한 사용자의 장바구니 총 수량을 반환합니다."""
+    user_id = session.get('user_id') or (session.get('user') or {}).get('id')
+    if not user_id:
+        return jsonify({'success': True, 'count': 0}), 200
+
+    try:
+        supabase = get_supabase_admin_client()
+        response = (
+            supabase.table('carts')
+            .select('quantity')
+            .eq('user_id', user_id)
+            .execute()
+        )
+        count = sum(int(item.get('quantity') or 0) for item in (response.data or []))
+        return jsonify({'success': True, 'count': count}), 200
+    except Exception as e:
+        logger.error(f"[Cart Count Error] {e}", exc_info=True)
+        return jsonify({'success': False, 'count': 0}), 500
+
+
 @main_bp.route('/cart', methods=['GET'])
 def cart_view():
     """

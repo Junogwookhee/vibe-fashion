@@ -284,11 +284,9 @@
                         rowElem.remove();
                         checkEmptyCart();
                         recalculateCartTotal();
+                        syncCartCountBadge();
                     }, 300);
                 }
-
-                // 3. 글로벌 장바구니 카운트 배지 갱신
-                syncCartCountBadge();
             } else {
                 alert(data.error || '장바구니 아이템 삭제에 실패했습니다.');
             }
