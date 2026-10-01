@@ -123,7 +123,7 @@ def register_kakao_routes(auth_bp):
         params = urlencode({
             "provider": "kakao",
             "redirect_to": callback,
-            "scopes": "profile_nickname account_email",
+            "scopes": "profile_nickname",
             "code_challenge": challenge,
             "code_challenge_method": "s256",
         })
