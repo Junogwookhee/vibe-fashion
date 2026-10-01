@@ -1,6 +1,7 @@
 import os
 import smtplib
 import logging
+from html import escape
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
@@ -103,6 +104,25 @@ def build_signup_confirmation_email(user_name: str, confirm_link: str) -> str:
                 &copy; 2026 VIBE-FASHION. All rights reserved.<br>
                 본 메일은 발신 전용 메일입니다.
             </div>
+        </div>
+    </body>
+    </html>
+    """
+
+
+def build_kakao_welcome_email(user_name: str) -> str:
+    """Create a welcome email for a new Kakao-authenticated member."""
+    safe_name = escape(user_name or "회원")
+    return f"""
+    <!DOCTYPE html>
+    <html lang="ko">
+    <head><meta charset="utf-8"></head>
+    <body style="margin:0;padding:24px;background:#f5f6f8;font-family:Arial,sans-serif;color:#202124">
+        <div style="max-width:560px;margin:0 auto;padding:32px;background:#fff;border:1px solid #e5e7eb">
+            <h1 style="margin:0 0 20px;font-size:22px">VIBE-FASHION</h1>
+            <p>{safe_name}님, 카카오 계정으로 가입해 주셔서 감사합니다.</p>
+            <p>이제 VIBE-FASHION에서 상품을 둘러보고 주문하실 수 있습니다.</p>
+            <p style="margin-top:28px;color:#6b7280;font-size:13px">본 메일은 회원가입 안내이며 회신되지 않습니다.</p>
         </div>
     </body>
     </html>

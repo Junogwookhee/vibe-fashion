@@ -15,12 +15,18 @@ import json
 import os
 import secrets
 import time
+from datetime import datetime, timezone
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode, urlsplit
 from urllib.request import Request, urlopen
 
 from dotenv import load_dotenv
 from flask import current_app, redirect, request, session, url_for
+from app.utils.email_sender import (
+    build_kakao_welcome_email,
+    send_email_via_gmail_smtp,
+)
+from app.utils.supabase_client import get_supabase_admin_client
 
 
 def register_kakao_routes(auth_bp):
@@ -58,6 +64,41 @@ def register_kakao_routes(auth_bp):
     def fail(message):
         return redirect(url_for("auth.login", error=message))
 
+    def send_welcome_email_for_new_user(user_id, email, name, created_at):
+        if not email or not created_at:
+            return
+
+        try:
+            created = datetime.fromisoformat(str(created_at).replace("Z", "+00:00"))
+            if created.tzinfo is None:
+                created = created.replace(tzinfo=timezone.utc)
+            age_seconds = (datetime.now(timezone.utc) - created).total_seconds()
+            if age_seconds < 0 or age_seconds > 600:
+                return
+
+            admin = get_supabase_admin_client().auth.admin
+            admin_user = admin.get_user_by_id(user_id).user
+            app_metadata = dict(admin_user.app_metadata or {})
+            marker = "vibe_kakao_welcome_email_status"
+            if app_metadata.get(marker) in ("pending", "sent"):
+                return
+
+            app_metadata[marker] = "pending"
+            admin.update_user_by_id(user_id, {"app_metadata": app_metadata})
+            sent = send_email_via_gmail_smtp(
+                email,
+                "[VIBE-FASHION] 카카오 회원가입을 환영합니다",
+                build_kakao_welcome_email(name),
+            )
+            if sent:
+                app_metadata[marker] = "sent"
+                admin.update_user_by_id(user_id, {"app_metadata": app_metadata})
+            else:
+                app_metadata.pop(marker, None)
+                admin.update_user_by_id(user_id, {"app_metadata": app_metadata})
+        except Exception:
+            current_app.logger.warning("Kakao signup welcome email could not be sent")
+
     @auth_bp.route("/kakao", methods=["GET"])
     def kakao_login():
         if session.get("user_id"):
@@ -83,7 +124,7 @@ def register_kakao_routes(auth_bp):
         params = urlencode({
             "provider": "kakao",
             "redirect_to": callback,
-            "scope": "profile_nickname",
+            "scopes": "profile_nickname account_email",
             "code_challenge": challenge,
             "code_challenge_method": "s256",
         })
@@ -121,6 +162,9 @@ def register_kakao_routes(auth_bp):
             name = (metadata.get("full_name") or metadata.get("name")
                     or metadata.get("nickname") or metadata.get("preferred_username")
                     or (email.split("@")[0] if email else "카카오 회원"))
+            send_welcome_email_for_new_user(
+                user["id"], email, str(name), user.get("created_at")
+            )
             # Match the existing application's session fields; keep cart data.
             session["user_id"] = user["id"]
             session["user"] = {
