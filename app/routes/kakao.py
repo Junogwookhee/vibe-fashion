@@ -73,18 +73,20 @@ def register_kakao_routes(auth_bp):
             if created.tzinfo is None:
                 created = created.replace(tzinfo=timezone.utc)
             age_seconds = (datetime.now(timezone.utc) - created).total_seconds()
-            if age_seconds < 0 or age_seconds > 600:
-                return
-
             admin = get_supabase_admin_client().auth.admin
             admin_user = admin.get_user_by_id(user_id).user
             app_metadata = dict(admin_user.app_metadata or {})
             marker = "vibe_kakao_welcome_email_status"
-            if app_metadata.get(marker) in ("pending", "sent"):
+            status = app_metadata.get(marker)
+            if status == "sent":
                 return
 
-            app_metadata[marker] = "pending"
-            admin.update_user_by_id(user_id, {"app_metadata": app_metadata})
+            if status != "pending":
+                if age_seconds < 0 or age_seconds > 600:
+                    return
+                app_metadata[marker] = "pending"
+                admin.update_user_by_id(user_id, {"app_metadata": app_metadata})
+
             sent = send_email_via_gmail_smtp(
                 email,
                 "[VIBE-FASHION] 카카오 회원가입을 환영합니다",
@@ -92,9 +94,6 @@ def register_kakao_routes(auth_bp):
             )
             if sent:
                 app_metadata[marker] = "sent"
-                admin.update_user_by_id(user_id, {"app_metadata": app_metadata})
-            else:
-                app_metadata.pop(marker, None)
                 admin.update_user_by_id(user_id, {"app_metadata": app_metadata})
         except Exception:
             current_app.logger.warning("Kakao signup welcome email could not be sent")
