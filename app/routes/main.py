@@ -492,7 +492,7 @@ def add_to_cart():
         }), 500
 
 
-@main_bp.route('/cart/<int:cart_id>', methods=['PATCH'])
+@main_bp.route('/cart/<cart_id>', methods=['PATCH'])
 def update_cart(cart_id):
     """
     장바구니 수량 변경 라우트: PATCH /cart/<cart_id>
@@ -645,6 +645,204 @@ def update_cart(cart_id):
             'success': False,
             'error': '장바구니 수량을 변경하는 중 오류가 발생했습니다.'
         }), 500
+
+
+@main_bp.route('/cart/<cart_id>', methods=['DELETE'])
+def delete_cart_item(cart_id):
+    """
+    장바구니 아이템 삭제 라우트: DELETE /cart/<cart_id>
+    - 본인 소유의 장바구니 아이템인지 확인 후 삭제
+    - 미로그인 시 401
+    - 다른 사용자의 cart_id 접근 시 403 차단
+    - 성공 시 JSON: {"success": true, "message": "장바구니에서 상품이 삭제되었습니다."}
+    """
+    user_id = session.get('user_id') or (session.get('user') or {}).get('id')
+    if not user_id:
+        login_url = url_for('auth.login', error='login_required', next=request.referrer or url_for('main.cart_view'))
+        if request.is_json or request.headers.get('Accept') == 'application/json':
+            return jsonify({
+                'success': False,
+                'error': '로그인이 필요한 서비스입니다.',
+                'redirect_url': login_url
+            }), 401
+        return redirect(login_url)
+
+    try:
+        supabase = get_supabase_admin_client()
+
+        # 1. 장바구니 아이템 조회
+        cart_res = (
+            supabase.table('carts')
+            .select('id, user_id, product_id, option_id, quantity')
+            .eq('id', cart_id)
+            .execute()
+        )
+
+        if not cart_res.data:
+            return jsonify({
+                'success': False,
+                'error': '해당 장바구니 항목을 찾을 수 없습니다.'
+            }), 404
+
+        cart_item = cart_res.data[0]
+
+        # 2. 본인 소유 확인 (다른 사용자의 cart_id 삭제 차단)
+        if str(cart_item.get('user_id')) != str(user_id):
+            return jsonify({
+                'success': False,
+                'error': '다른 사용자의 장바구니는 삭제할 수 없습니다.'
+            }), 403
+
+        # 3. 삭제 수행
+        supabase.table('carts').delete().eq('id', cart_id).eq('user_id', user_id).execute()
+
+        return jsonify({
+            'success': True,
+            'message': '장바구니에서 상품이 삭제되었습니다.',
+            'cart_id': cart_id
+        }), 200
+
+    except Exception as e:
+        logger.error(f"[Delete Cart Error] {e}", exc_info=True)
+        return jsonify({
+            'success': False,
+            'error': '장바구니 아이템을 삭제하는 중 오류가 발생했습니다.'
+        }), 500
+
+
+@main_bp.route('/cart', methods=['GET'])
+def cart_view():
+    """
+    장바구니 목록 조회 페이지: GET /cart
+    - carts + product_options + products JOIN 조회
+    - 각 아이템: 상품명, 색상, 사이즈, 수량, 단가, 소계
+    - 품절(stock=0) 아이템 식별: is_sold_out 플래그 전달
+    - 전체 합계 + 배송비 (50,000원 미만이면 3,000원, 이상이면 무료)
+    - 품절 아이템 존재 여부(has_sold_out) 전달
+    """
+    user_id = session.get('user_id') or (session.get('user') or {}).get('id')
+    if not user_id:
+        return redirect(url_for('auth.login', error='login_required', next=url_for('main.cart_view')))
+
+    try:
+        supabase = get_supabase_admin_client()
+
+        # carts + product_options + products JOIN 조회
+        cart_res = (
+            supabase.table('carts')
+            .select('id, user_id, product_id, option_id, quantity, created_at, product_options(*), products(*)')
+            .eq('user_id', user_id)
+            .order('created_at', desc=True)
+            .execute()
+        )
+        raw_items = cart_res.data or []
+
+        items = []
+        subtotal_amount = 0
+        has_sold_out = False
+
+        for row in raw_items:
+            cid = row['id']
+            pid = row['product_id']
+            oid = row.get('option_id')
+            qty = int(row.get('quantity') or 1)
+
+            # JOIN된 products 정보
+            prod_data = row.get('products') or {}
+            if not prod_data:
+                # JOIN 데이터가 비어있을 경우 fallback 조회
+                p_lookup = supabase.table('products').select('*').eq('id', pid).execute()
+                if p_lookup.data:
+                    prod_data = p_lookup.data[0]
+                else:
+                    continue
+
+            raw_price = float(prod_data.get('price') or 0)
+            sale_price = prod_data.get('sale_price')
+            base_price = float(sale_price) if sale_price and float(sale_price) < raw_price else raw_price
+
+            # JOIN된 product_options 정보
+            opt_data = row.get('product_options') or {}
+            if not opt_data and oid:
+                o_lookup = supabase.table('product_options').select('*').eq('id', oid).execute()
+                if o_lookup.data:
+                    opt_data = o_lookup.data[0]
+
+            color = opt_data.get('color') or ''
+            size = opt_data.get('size') or ''
+            stock = int(opt_data.get('stock') if opt_data.get('stock') is not None else (prod_data.get('stock') or 0))
+            additional_price = float(opt_data.get('additional_price') or 0)
+
+            # 품절(stock=0) 여부 판정
+            is_sold_out = (stock <= 0)
+            if is_sold_out:
+                has_sold_out = True
+
+            unit_price = base_price + additional_price
+            subtotal = unit_price * qty
+            subtotal_amount += subtotal
+
+            items.append({
+                'cart_id': cid,
+                'product_id': pid,
+                'product_name': prod_data.get('name') or '상품',
+                'slug': prod_data.get('slug'),
+                'thumbnail_url': prod_data.get('thumbnail_url') or 'https://images.unsplash.com/photo-1523381210434-271e8be1f52b?auto=format&fit=crop&w=300&q=80',
+                'option_id': oid,
+                'color': color,
+                'size': size,
+                'stock': stock,
+                'is_sold_out': is_sold_out,
+                'unit_price': int(unit_price),
+                'formatted_unit_price': f"{int(unit_price):,}원",
+                'quantity': qty,
+                'subtotal': int(subtotal),
+                'formatted_subtotal': f"{int(subtotal):,}원"
+            })
+
+        # 배송비 계산 (상품 합계 50,000원 미만이면 3,000원, 이상이면 무료)
+        if len(items) == 0:
+            shipping_fee = 0
+        else:
+            shipping_fee = 0 if subtotal_amount >= 50000 else 3000
+
+        total_amount = subtotal_amount + shipping_fee
+
+        return render_template(
+            'cart.html',
+            cart_items=items,
+            subtotal_amount=int(subtotal_amount),
+            formatted_subtotal=f"{int(subtotal_amount):,}원",
+            shipping_fee=shipping_fee,
+            formatted_shipping_fee="무료" if shipping_fee == 0 else f"{int(shipping_fee):,}원",
+            total_amount=int(total_amount),
+            formatted_total=f"{int(total_amount):,}원",
+            has_sold_out=has_sold_out
+        )
+
+    except Exception as e:
+        logger.error(f"[Cart View Error] {e}", exc_info=True)
+        return render_template(
+            'cart.html',
+            cart_items=[],
+            subtotal_amount=0,
+            formatted_subtotal="0원",
+            shipping_fee=0,
+            formatted_shipping_fee="0원",
+            total_amount=0,
+            formatted_total="0원",
+            has_sold_out=False
+        )
+
+
+@main_bp.route('/order/checkout', methods=['GET', 'POST'])
+def order_checkout_alias():
+    """
+    주문 결제 페이지 라우트 (/order/checkout):
+    - 장바구니에서 [주문하기] 클릭 시 이동
+    - /checkout 페이지로 내부 연결
+    """
+    return checkout()
 
 
 @main_bp.route('/products/<product_id>/options')

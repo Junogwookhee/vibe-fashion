@@ -1,0 +1,466 @@
+{% extends 'base.html' %}
+
+{% block title %}장바구니 | VIBE-FASHION{% endblock %}
+
+{% block content %}
+<!-- 브레드크럼 네비게이션 -->
+<nav class="py-3 bg-white border-bottom" aria-label="breadcrumb">
+    <div class="container">
+        <ol class="breadcrumb mb-0 small">
+            <li class="breadcrumb-item"><a href="{{ url_for('main.index') }}" class="text-decoration-none text-muted">HOME</a></li>
+            <li class="breadcrumb-item"><a href="{{ url_for('main.index') }}#products" class="text-decoration-none text-muted">COLLECTION</a></li>
+            <li class="breadcrumb-item active text-dark fw-bold" aria-current="page">장바구니 (SHOPPING CART)</li>
+        </ol>
+    </div>
+</nav>
+
+<section class="py-5 bg-surface" style="min-height: 80vh;">
+    <div class="container py-2">
+        <!-- 상단 헤더 -->
+        <div class="d-flex justify-content-between align-items-end mb-4 pb-2 border-bottom border-light-subtle">
+            <div>
+                <span class="badge bg-dark rounded-pill px-3 py-1 small fw-bold mb-2">MY CART</span>
+                <h2 class="display-6 fw-bold text-dark mb-0">장바구니</h2>
+            </div>
+            <a href="{{ url_for('main.index') }}#products" class="btn btn-outline-dark btn-sm rounded-pill px-3">
+                <i class="bi bi-arrow-left me-1"></i>쇼핑 계속하기
+            </a>
+        </div>
+
+        <!-- 1. 장바구니 비어있음 안내 영역 -->
+        <div id="emptyCartNotice" class="text-center py-5 my-5 bg-white rounded-4 shadow-sm p-4 p-md-5 border border-light-subtle {% if cart_items %}d-none{% endif %}">
+            <div class="d-inline-flex align-items-center justify-content-center mx-auto mb-3" style="width: 80px; height: 80px; border-radius: 50%; background: rgba(225, 29, 72, 0.08); color: var(--brand-coral);">
+                <i class="bi bi-bag-x display-4"></i>
+            </div>
+            <h3 class="fw-bold text-dark mb-2">장바구니가 비어있습니다</h3>
+            <p class="text-muted small mb-4">담아두신 상품이 없습니다. 마음에 드는 상품을 장바구니에 담아보세요!</p>
+            <a href="{{ url_for('main.index') }}#products" class="btn btn-dark rounded-pill px-4 py-3 fw-bold">
+                <i class="bi bi-bag-plus me-2"></i>쇼핑 계속하기
+            </a>
+        </div>
+
+        <!-- 2. 장바구니 상품 목록 및 주문 요약 영역 -->
+        <div id="cartContentWrapper" class="row g-4 g-lg-5 {% if not cart_items %}d-none{% endif %}">
+            <!-- 좌측: 상품 리스트 -->
+            <div class="col-lg-8">
+                <div class="card border-0 rounded-4 shadow-sm bg-white p-3 p-md-4 mb-4">
+                    <div class="d-flex justify-content-between align-items-center pb-3 border-bottom mb-3">
+                        <span class="fw-bold text-dark">장바구니 상품 (<span id="cartItemCount">{{ cart_items|length }}</span>)</span>
+                        <span class="text-muted very-small"><i class="bi bi-truck me-1"></i>5만원 이상 구매 시 무료배송</span>
+                    </div>
+
+                    <!-- 장바구니 아이템 목록 -->
+                    <div id="cartItemsList" class="d-flex flex-column gap-3">
+                        {% for item in cart_items %}
+                        <div class="cart-item-row p-3 rounded-3 bg-surface border border-light-subtle position-relative {% if item.is_sold_out %}border-danger bg-danger-subtle bg-opacity-10{% endif %}"
+                             id="cart-item-{{ item.cart_id }}"
+                             data-cart-id="{{ item.cart_id }}"
+                             data-unit-price="{{ item.unit_price }}"
+                             data-stock="{{ item.stock }}"
+                             data-is-sold-out="{{ 'true' if item.is_sold_out else 'false' }}">
+                            <div class="row g-3 align-items-center">
+                                <!-- 상품 썸네일 -->
+                                <div class="col-auto">
+                                    <a href="{{ url_for('main.product_detail', slug_or_id=item.slug or item.product_id) }}">
+                                        <img src="{{ item.thumbnail_url }}" alt="{{ item.product_name }}" class="rounded-3 object-fit-cover shadow-2xs" style="width: 80px; height: 100px;">
+                                    </a>
+                                </div>
+
+                                <!-- 상품 정보: 상품명, 색상, 사이즈, 단가 -->
+                                <div class="col">
+                                    <div class="d-flex align-items-center gap-2 mb-1">
+                                        <h6 class="fw-bold text-dark mb-0">
+                                            <a href="{{ url_for('main.product_detail', slug_or_id=item.slug or item.product_id) }}" class="text-decoration-none text-dark">
+                                                {{ item.product_name }}
+                                            </a>
+                                        </h6>
+                                        {% if item.is_sold_out %}
+                                            <span class="badge bg-danger rounded-pill px-2 py-1 small fw-bold">품절됨</span>
+                                        {% endif %}
+                                    </div>
+
+                                    <!-- 색상, 사이즈 옵션 표시 -->
+                                    <div class="text-muted small mb-2 d-flex flex-wrap gap-2 align-items-center">
+                                        {% if item.color %}
+                                            <span class="badge bg-light text-dark border">색상: <strong>{{ item.color }}</strong></span>
+                                        {% endif %}
+                                        {% if item.size %}
+                                            <span class="badge bg-light text-dark border">사이즈: <strong>{{ item.size }}</strong></span>
+                                        {% endif %}
+                                    </div>
+
+                                    <!-- 단가 표시 -->
+                                    <div class="text-muted very-small">
+                                        단가 <span class="fw-semibold text-dark">{{ item.formatted_unit_price }}</span>
+                                    </div>
+                                </div>
+
+                                <!-- 수량 변경 컨트롤 (+/-, PATCH API 연동, 품절 시 비활성화) -->
+                                <div class="col-auto text-center">
+                                    <div class="d-inline-flex align-items-center border rounded-pill p-1 bg-white shadow-2xs">
+                                        <button class="btn btn-sm rounded-circle px-2 text-dark"
+                                                type="button"
+                                                onclick="changeItemQty('{{ item.cart_id }}', -1)"
+                                                aria-label="수량 감소"
+                                                {% if item.is_sold_out %}disabled{% endif %}>
+                                            <i class="bi bi-dash"></i>
+                                        </button>
+                                        <input type="number"
+                                               id="qty-input-{{ item.cart_id }}"
+                                               class="form-control form-control-sm text-center border-0 bg-transparent fw-bold"
+                                               value="{{ item.quantity }}"
+                                               min="1"
+                                               max="{{ item.stock }}"
+                                               style="width: 45px;"
+                                               readonly
+                                               {% if item.is_sold_out %}disabled{% endif %}>
+                                        <button class="btn btn-sm rounded-circle px-2 text-dark"
+                                                type="button"
+                                                onclick="changeItemQty('{{ item.cart_id }}', 1)"
+                                                aria-label="수량 증가"
+                                                {% if item.is_sold_out %}disabled{% endif %}>
+                                            <i class="bi bi-plus"></i>
+                                        </button>
+                                    </div>
+                                    {% if item.is_sold_out %}
+                                        <div class="text-danger very-small mt-1">수량 변경 불가</div>
+                                    {% endif %}
+                                </div>
+
+                                <!-- 소계 금액 -->
+                                <div class="col-auto text-end" style="min-width: 100px;">
+                                    <div class="fs-6 fw-bold text-coral" id="subtotal-{{ item.cart_id }}">
+                                        {{ item.formatted_subtotal }}
+                                    </div>
+                                </div>
+
+                                <!-- 삭제 버튼 (DELETE API 연동 모달 오픈) -->
+                                <div class="col-auto">
+                                    <button type="button" class="btn btn-sm btn-outline-danger rounded-circle p-2 d-flex align-items-center justify-content-center" title="삭제" onclick="openDeleteModal('{{ item.cart_id }}', '{{ item.product_name }}')">
+                                        <i class="bi bi-trash3"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+
+            <!-- 우측: 결제 금액 요약 카드 -->
+            <div class="col-lg-4">
+                <div class="card border-0 rounded-4 shadow-sm bg-white p-4 sticky-top" style="top: 100px;">
+                    <h5 class="fw-bold text-dark mb-3">결제 예상 금액</h5>
+
+                    <div class="d-flex justify-content-between text-muted small mb-2">
+                        <span>상품 합계</span>
+                        <span id="orderSubtotalText" class="text-dark fw-semibold">{{ formatted_subtotal }}</span>
+                    </div>
+                    <div class="d-flex justify-content-between text-muted small mb-3">
+                        <span>배송비 (5만원 이상 무료)</span>
+                        <span id="shippingFeeText" class="{% if shipping_fee == 0 %}text-success fw-semibold{% else %}text-dark fw-semibold{% endif %}">
+                            {{ formatted_shipping_fee }}
+                        </span>
+                    </div>
+
+                    <hr class="border-light-subtle my-3">
+
+                    <div class="d-flex justify-content-between align-items-baseline mb-3">
+                        <span class="fw-bold text-dark fs-6">총 결제 예정 금액</span>
+                        <span id="orderTotalText" class="fs-4 fw-bold text-coral">{{ formatted_total }}</span>
+                    </div>
+
+                    <!-- 품절 아이템 존재 시 안내 문구 -->
+                    <div id="soldOutNoticeBox" class="alert alert-danger small py-2 px-3 rounded-3 mb-3 {% if not has_sold_out %}d-none{% endif %}">
+                        <i class="bi bi-exclamation-circle-fill me-1"></i>
+                        <span>품절된 상품이 포함되어 있어 주문할 수 없습니다. 품절 상품을 삭제 후 주문해주세요.</span>
+                    </div>
+
+                    <!-- 주문하기 버튼 (품절 상품이 하나라도 있으면 비활성화) -->
+                    <div class="d-grid gap-2">
+                        <a href="{{ url_for('main.order_checkout_alias') }}"
+                           id="btnCheckout"
+                           class="btn btn-dark btn-lg rounded-pill fw-bold py-3 shadow-sm {% if has_sold_out %}disabled{% endif %}"
+                           {% if has_sold_out %}aria-disabled="true" tabindex="-1"{% endif %}>
+                            <i class="bi bi-credit-card me-2"></i>주문하기
+                        </a>
+                        <a href="{{ url_for('main.index') }}#products" class="btn btn-outline-secondary rounded-pill py-2 small fw-semibold">
+                            <i class="bi bi-arrow-left me-1"></i>쇼핑 계속하기
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- 삭제 확인 Bootstrap Modal -->
+<div class="modal fade" id="deleteConfirmModal" tabindex="-1" aria-labelledby="deleteModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-sm">
+        <div class="modal-content rounded-4 border-0 shadow-lg">
+            <div class="modal-body p-4 text-center">
+                <div class="d-inline-flex align-items-center justify-content-center mx-auto mb-3" style="width: 56px; height: 56px; border-radius: 50%; background: rgba(239, 68, 68, 0.1); color: #ef4444;">
+                    <i class="bi bi-exclamation-triangle fs-3"></i>
+                </div>
+                <h6 class="fw-bold text-dark mb-2" id="deleteModalLabel">장바구니 상품 삭제</h6>
+                <p class="text-muted small mb-0" id="deleteModalMessage">
+                    이 상품을 장바구니에서 삭제하시겠습니까?
+                </p>
+                <div id="deleteModalTargetName" class="badge bg-light text-dark border text-truncate mt-2" style="max-width: 100%;"></div>
+            </div>
+            <div class="modal-footer border-0 p-3 pt-0 d-flex gap-2 justify-content-center">
+                <button type="button" class="btn btn-light rounded-pill px-3 flex-grow-1" data-bs-dismiss="modal">
+                    취소
+                </button>
+                <button type="button" class="btn btn-danger rounded-pill px-3 flex-grow-1 fw-bold" id="btnConfirmDelete" onclick="confirmDeleteCartItem()">
+                    삭제하기
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // 삭제 대상 cart_id 저장 변수
+    let targetDeleteCartId = null;
+
+    /**
+     * 삭제 모달 열기 핸들러
+     * @param {string|number} cartId 장바구니 아이템 식별자
+     * @param {string} itemName 상품명
+     */
+    function openDeleteModal(cartId, itemName) {
+        targetDeleteCartId = cartId;
+        const targetNameElem = document.getElementById('deleteModalTargetName');
+        if (targetNameElem) {
+            targetNameElem.textContent = itemName || '선택한 상품';
+        }
+
+        const modalElem = document.getElementById('deleteConfirmModal');
+        const modal = bootstrap.Modal.getOrCreateInstance(modalElem);
+        modal.show();
+    }
+
+    /**
+     * 장바구니 아이템 삭제 실행 핸들러: DELETE /cart/<cart_id>
+     * - 성공 시 해당 아이템만 화면에서 제거 (새로고침 없이 JS로 처리)
+     * - 장바구니가 비게 되면 안내 문구 표시
+     */
+    async function confirmDeleteCartItem() {
+        if (!targetDeleteCartId) return;
+
+        const btnConfirm = document.getElementById('btnConfirmDelete');
+        if (btnConfirm) btnConfirm.disabled = true;
+
+        try {
+            const response = await fetch(`/cart/${targetDeleteCartId}`, {
+                method: 'DELETE',
+                headers: {
+                    'Accept': 'application/json'
+                }
+            });
+
+            if (response.status === 401) {
+                alert('로그인이 필요한 서비스입니다.');
+                window.location.href = '/auth/login';
+                return;
+            }
+
+            const data = await response.json();
+
+            if (response.ok && data.success) {
+                // 1. 모달 닫기
+                const modalElem = document.getElementById('deleteConfirmModal');
+                const modal = bootstrap.Modal.getInstance(modalElem);
+                if (modal) modal.hide();
+
+                // 2. 해당 아이템 DOM에서 제거 (새로고침 없이 부드럽게 삭제)
+                const rowElem = document.getElementById(`cart-item-${targetDeleteCartId}`);
+                if (rowElem) {
+                    rowElem.style.transition = 'all 0.3s ease';
+                    rowElem.style.opacity = '0';
+                    rowElem.style.transform = 'translateY(-10px)';
+                    setTimeout(() => {
+                        rowElem.remove();
+                        checkEmptyCart();
+                        recalculateCartTotal();
+                    }, 300);
+                }
+
+                // 3. 글로벌 장바구니 카운트 배지 갱신
+                syncCartCountBadge();
+            } else {
+                alert(data.error || '장바구니 아이템 삭제에 실패했습니다.');
+            }
+        } catch (error) {
+            console.error('[Delete Cart Item Error]', error);
+            alert('삭제 요청 중 네트워크 통신 오류가 발생했습니다.');
+        } finally {
+            if (btnConfirm) btnConfirm.disabled = false;
+            targetDeleteCartId = null;
+        }
+    }
+
+    /**
+     * 장바구니 수량 변경 핸들러: PATCH /cart/<cart_id>
+     */
+    async function changeItemQty(cartId, diff) {
+        const qtyInput = document.getElementById(`qty-input-${cartId}`);
+        if (!qtyInput || qtyInput.disabled) return;
+
+        let currentQty = parseInt(qtyInput.value) || 1;
+        let newQty = currentQty + diff;
+
+        if (newQty < 1) {
+            // 1 미만으로 줄일 경우 삭제 모달 유도
+            const rowElem = document.getElementById(`cart-item-${cartId}`);
+            const name = rowElem ? (rowElem.querySelector('h6 a')?.textContent?.trim() || '') : '';
+            openDeleteModal(cartId, name);
+            return;
+        }
+
+        try {
+            const response = await fetch(`/cart/${cartId}`, {
+                method: 'PATCH',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                },
+                body: JSON.stringify({ quantity: newQty })
+            });
+
+            if (response.status === 401) {
+                alert('로그인이 필요한 서비스입니다.');
+                window.location.href = '/auth/login';
+                return;
+            }
+
+            const data = await response.json();
+
+            if (response.ok && data.success) {
+                qtyInput.value = data.data.quantity;
+                const subtotalElem = document.getElementById(`subtotal-${cartId}`);
+                if (subtotalElem) {
+                    subtotalElem.textContent = Number(data.data.subtotal).toLocaleString() + '원';
+                }
+                recalculateCartTotal();
+                syncCartCountBadge();
+            } else {
+                alert(data.error || '수량 변경에 실패했습니다.');
+            }
+        } catch (err) {
+            console.error('[Change Qty Error]', err);
+            alert('수량 변경 중 통신 오류가 발생했습니다.');
+        }
+    }
+
+    /**
+     * 장바구니 총 금액 및 배송비 재계산
+     * - 배송비 정책: 50,000원 미만 3,000원, 이상 무료
+     * - 품절 아이템 여부에 따른 주문하기 버튼 상태 갱신
+     */
+    function recalculateCartTotal() {
+        let grandSubtotal = 0;
+        let hasSoldOut = false;
+        const rows = document.querySelectorAll('.cart-item-row');
+
+        rows.forEach(row => {
+            const cartId = row.dataset.cartId;
+            const unitPrice = parseFloat(row.dataset.unitPrice) || 0;
+            const isSoldOut = row.dataset.isSoldOut === 'true';
+            if (isSoldOut) {
+                hasSoldOut = true;
+            }
+
+            const qtyInput = document.getElementById(`qty-input-${cartId}`);
+            const qty = qtyInput ? (parseInt(qtyInput.value) || 0) : 0;
+            grandSubtotal += unitPrice * qty;
+        });
+
+        // 배송비 계산
+        let shippingFee = 0;
+        if (rows.length > 0) {
+            shippingFee = grandSubtotal >= 50000 ? 0 : 3000;
+        }
+        const totalAmount = grandSubtotal + shippingFee;
+
+        // 화면 금액 갱신
+        const subtotalText = document.getElementById('orderSubtotalText');
+        const shippingFeeText = document.getElementById('shippingFeeText');
+        const totalText = document.getElementById('orderTotalText');
+
+        if (subtotalText) subtotalText.textContent = grandSubtotal.toLocaleString() + '원';
+        if (shippingFeeText) {
+            if (shippingFee === 0) {
+                shippingFeeText.className = 'text-success fw-semibold';
+                shippingFeeText.textContent = '무료';
+            } else {
+                shippingFeeText.className = 'text-dark fw-semibold';
+                shippingFeeText.textContent = shippingFee.toLocaleString() + '원';
+            }
+        }
+        if (totalText) totalText.textContent = totalAmount.toLocaleString() + '원';
+
+        // 주문하기 버튼 및 품절 안내 제어
+        const btnCheckout = document.getElementById('btnCheckout');
+        const soldOutNoticeBox = document.getElementById('soldOutNoticeBox');
+
+        if (hasSoldOut) {
+            if (btnCheckout) {
+                btnCheckout.classList.add('disabled');
+                btnCheckout.setAttribute('aria-disabled', 'true');
+                btnCheckout.setAttribute('tabindex', '-1');
+            }
+            if (soldOutNoticeBox) {
+                soldOutNoticeBox.classList.remove('d-none');
+            }
+        } else {
+            if (btnCheckout) {
+                btnCheckout.classList.remove('disabled');
+                btnCheckout.removeAttribute('aria-disabled');
+                btnCheckout.removeAttribute('tabindex');
+            }
+            if (soldOutNoticeBox) {
+                soldOutNoticeBox.classList.add('d-none');
+            }
+        }
+    }
+
+    /**
+     * 장바구니 아이템이 모두 삭제되었는지 확인하고 비어있음 안내 표시
+     */
+    function checkEmptyCart() {
+        const items = document.querySelectorAll('.cart-item-row');
+        const countElem = document.getElementById('cartItemCount');
+        if (countElem) countElem.textContent = items.length;
+
+        if (items.length === 0) {
+            const wrapper = document.getElementById('cartContentWrapper');
+            const emptyNotice = document.getElementById('emptyCartNotice');
+            if (wrapper) wrapper.classList.add('d-none');
+            if (emptyNotice) emptyNotice.classList.remove('d-none');
+        }
+    }
+
+    /**
+     * 상단 내비게이션 바의 장바구니 배지 숫자와 localStorage 동기화
+     */
+    function syncCartCountBadge() {
+        let totalQty = 0;
+        document.querySelectorAll('.cart-item-row').forEach(row => {
+            const cartId = row.dataset.cartId;
+            const qtyInput = document.getElementById(`qty-input-${cartId}`);
+            if (qtyInput) totalQty += parseInt(qtyInput.value) || 0;
+        });
+
+        try {
+            localStorage.setItem('cartCount', String(totalQty));
+        } catch (e) {}
+
+        if (typeof updateCartBadges === 'function') {
+            cartCount = totalQty;
+            updateCartBadges();
+        }
+    }
+</script>
+{% endblock %}
