@@ -681,96 +681,7 @@ def product_delete(product_id):
 
 
 # ==============================================================================
-# [6] 주문 관리: 목록 및 검색/필터 (GET /admin/orders)
-# ==============================================================================
-@admin_bp.route('/orders', methods=['GET'])
-@admin_required
-def order_list():
-    """
-    주문 목록, 주문번호/수령인 검색, 주문상태 필터, 페이지네이션
-    """
-    admin_client = get_supabase_admin_client()
-
-    query_text = request.args.get('q', '').strip()
-    status_filter = request.args.get('status', '').strip().upper()
-
-    try:
-        page = max(1, int(request.args.get('page', 1)))
-    except (ValueError, TypeError):
-        page = 1
-    per_page = 10
-
-    orders = []
-    total_count = 0
-    total_pages = 1
-    db_error = None
-
-    try:
-        ord_res = admin_client.table('orders').select('*').order('created_at', desc=True).execute()
-        all_orders = ord_res.data or []
-
-        filtered = []
-        for o in all_orders:
-            # 검색어 필터
-            if query_text:
-                q_lower = query_text.lower()
-                num_match = q_lower in (o.get('order_number') or '').lower()
-                name_match = q_lower in (o.get('recipient_name') or '').lower()
-                phone_match = q_lower in (o.get('recipient_phone') or '').lower()
-                if not (num_match or name_match or phone_match):
-                    continue
-
-            # 상태 필터
-            if status_filter and status_filter != 'ALL':
-                if str(o.get('status') or '').upper() != status_filter:
-                    continue
-
-            filtered.append(o)
-
-        total_count = len(filtered)
-        total_pages = max(1, math.ceil(total_count / per_page))
-        start_idx = (page - 1) * per_page
-        orders = filtered[start_idx:start_idx + per_page]
-
-        # 각 주문별 주문 상품 대표명 및 항목 수 요약 연결
-        order_ids = [o['id'] for o in orders]
-        if order_ids:
-            items_res = admin_client.table('order_items').select('order_id, product_name, quantity').in_('order_id', order_ids).execute()
-            items_by_order = {}
-            for it in (items_res.data or []):
-                oid = it['order_id']
-                items_by_order.setdefault(oid, []).append(it)
-
-            for o in orders:
-                its = items_by_order.get(o['id'], [])
-                if its:
-                    first_name = its[0]['product_name']
-                    extra = len(its) - 1
-                    o['summary_title'] = f"{first_name} 외 {extra}건" if extra > 0 else first_name
-                    o['total_item_count'] = sum(x.get('quantity') or 1 for x in its)
-                else:
-                    o['summary_title'] = "주문 상품 1건"
-                    o['total_item_count'] = 1
-
-    except Exception as e:
-        logger.error(f"[Admin Order List Error] {e}", exc_info=True)
-        db_error = "주문 목록을 불러오는 중 오류가 발생했습니다."
-
-    return render_template(
-        'admin/orders.html',
-        active_menu='orders',
-        orders=orders,
-        query_text=query_text,
-        status_filter=status_filter,
-        page=page,
-        total_pages=total_pages,
-        total_count=total_count,
-        db_error=db_error
-    )
-
-
-# ==============================================================================
-# [7] 주문 상세 및 배송/상태 관리 (GET /admin/orders/<id>)
+# [6] 주문·배송 관리: 목록 및 검색/필터 (GET /admin/orders)
 # ==============================================================================
 # 유효한 상태 전환 규칙 (임의 결제완료/임의 환불 차단)
 ALLOWED_TRANSITIONS = {
@@ -784,17 +695,195 @@ ALLOWED_TRANSITIONS = {
 
 STATUS_LABELS = {
     'PENDING_PAYMENT': '입금 대기',
-    'PAID': '결제 완료',
+    'PAID': '미처리 (결제 완료)',
     'PREPARING': '배송 준비 중',
-    'SHIPPING': '배송 중',
+    'SHIPPING': '발송 완료 (배송 중)',
     'DELIVERED': '배송 완료',
     'CANCELLED': '주문 취소'
 }
 
+# 검증된 국내 주요 택배사 목록 및 배송조회 공식 템플릿
+SUPPORTED_CARRIERS = {
+    'CJ대한통운': {
+        'name': 'CJ대한통운',
+        'tracking_url': 'https://www.doortodoor.co.kr/parcel/doortodoor.do?fsp_action=PARC_ACT_002&fsp_cmd=retrieveInvNoACT&invc_no={tracking_number}'
+    },
+    '우체국택배': {
+        'name': '우체국택배',
+        'tracking_url': 'https://service.epost.go.kr/trace.RetrieveDomRcvTraceList.comm?sid1={tracking_number}'
+    },
+    '한진택배': {
+        'name': '한진택배',
+        'tracking_url': 'https://www.hanjin.com/kor/CMS/DeliveryMgr/WaybillResult.do?mCode=MN038&wblnum={tracking_number}&schLang=KR'
+    },
+    '롯데택배': {
+        'name': '롯데택배',
+        'tracking_url': 'https://www.lotteglogis.com/home/reservation/tracking/linkView?InvNo={tracking_number}'
+    },
+    '로젠택배': {
+        'name': '로젠택배',
+        'tracking_url': 'https://www.ilogen.com/web/personal/trace/{tracking_number}'
+    }
+}
 
+
+@admin_bp.route('/orders', methods=['GET'])
+@admin_required
+def order_list():
+    """
+    주문·배송 관리 목록:
+    - 상단 요약 카드: 미처리(PAID), 배송 준비 중(PREPARING), 발송 후 배송 완료 전(SHIPPING), 취소(CANCELLED)
+    - 검색: 주문번호, 주문자(수령인), 상품명
+    - 기간 필터: 전체/오늘/7일/30일
+    - 상태 필터: 전체/미처리/배송준비/발송완료(배송중)/배송완료/취소
+    - 페이지네이션 (10건) 및 조건 유지
+    """
+    admin_client = get_supabase_admin_client()
+
+    query_text = request.args.get('q', '').strip()
+    status_filter = request.args.get('status', '').strip().upper()
+    period_filter = request.args.get('period', '').strip().lower()
+
+    try:
+        page = max(1, int(request.args.get('page', 1)))
+    except (ValueError, TypeError):
+        page = 1
+    per_page = 10
+
+    orders = []
+    total_count = 0
+    total_pages = 1
+    db_error = None
+
+    metrics = {
+        'unprocessed': 0,      # 미처리 (PAID)
+        'preparing': 0,        # 배송 준비 중 (PREPARING)
+        'in_transit': 0,       # 발송 후 배송 완료 전 (SHIPPING)
+        'cancelled': 0,        # 취소 (CANCELLED)
+        'total': 0
+    }
+
+    try:
+        ord_res = admin_client.table('orders').select('*').order('created_at', desc=True).execute()
+        all_orders = ord_res.data or []
+        metrics['total'] = len(all_orders)
+
+        # 상단 요약 카운트 집계 (전체 기간 실데이터 기준)
+        for o in all_orders:
+            st = str(o.get('status') or '').upper()
+            if st == 'PAID':
+                metrics['unprocessed'] += 1
+            elif st == 'PREPARING':
+                metrics['preparing'] += 1
+            elif st == 'SHIPPING':
+                metrics['in_transit'] += 1
+            elif st == 'CANCELLED':
+                metrics['cancelled'] += 1
+
+        # 기간 필터링 기준 시간 계산
+        period_cutoff = None
+        now_ts = datetime.now(timezone.utc)
+        if period_filter == 'today':
+            period_cutoff = datetime(now_ts.year, now_ts.month, now_ts.day, tzinfo=timezone.utc)
+        elif period_filter == 'week':
+            period_cutoff = now_ts.timestamp() - (7 * 86400)
+        elif period_filter == 'month':
+            period_cutoff = now_ts.timestamp() - (30 * 86400)
+
+        # 주문 상품 매핑을 위해 order_items 미리 수집
+        all_order_ids = [o['id'] for o in all_orders]
+        items_by_order = {}
+        if all_order_ids:
+            items_res = admin_client.table('order_items').select('order_id, product_name, quantity').in_('order_id', all_order_ids).execute()
+            for it in (items_res.data or []):
+                oid = it['order_id']
+                items_by_order.setdefault(oid, []).append(it)
+
+        filtered = []
+        for o in all_orders:
+            oid = o['id']
+            its = items_by_order.get(oid, [])
+            product_names = [it.get('product_name', '') for it in its]
+
+            # 1. 기간 필터
+            if period_cutoff:
+                c_str = o.get('created_at') or ''
+                try:
+                    c_dt = datetime.fromisoformat(c_str.replace('Z', '+00:00'))
+                    if isinstance(period_cutoff, datetime):
+                        if c_dt < period_cutoff:
+                            continue
+                    else:
+                        if c_dt.timestamp() < period_cutoff:
+                            continue
+                except Exception:
+                    pass
+
+            # 2. 검색어 필터 (주문번호, 수령인, 주문 상품명)
+            if query_text:
+                q_lower = query_text.lower()
+                num_match = q_lower in (o.get('order_number') or '').lower()
+                name_match = q_lower in (o.get('recipient_name') or '').lower()
+                prod_match = any(q_lower in p.lower() for p in product_names)
+                if not (num_match or name_match or prod_match):
+                    continue
+
+            # 3. 상태 필터
+            if status_filter and status_filter != 'ALL':
+                if str(o.get('status') or '').upper() != status_filter:
+                    continue
+
+            filtered.append(o)
+
+        total_count = len(filtered)
+        total_pages = max(1, math.ceil(total_count / per_page))
+        start_idx = (page - 1) * per_page
+        orders = filtered[start_idx:start_idx + per_page]
+
+        # 각 주문별 대표 상품명 및 수량 정보 연결
+        for o in orders:
+            its = items_by_order.get(o['id'], [])
+            if its:
+                first_name = its[0]['product_name']
+                extra = len(its) - 1
+                o['summary_title'] = f"{first_name} 외 {extra}건" if extra > 0 else first_name
+                o['total_item_count'] = sum(x.get('quantity') or 1 for x in its)
+            else:
+                o['summary_title'] = "주문 상품 1건"
+                o['total_item_count'] = 1
+
+    except Exception as e:
+        logger.error(f"[Admin Order List Error] {e}", exc_info=True)
+        db_error = "주문 목록을 불러오는 중 오류가 발생했습니다."
+
+    return render_template(
+        'admin/orders.html',
+        active_menu='orders',
+        orders=orders,
+        metrics=metrics,
+        query_text=query_text,
+        status_filter=status_filter,
+        period_filter=period_filter,
+        page=page,
+        total_pages=total_pages,
+        total_count=total_count,
+        status_labels=STATUS_LABELS,
+        db_error=db_error
+    )
+
+
+# ==============================================================================
+# [7] 주문 상세 및 배송/상태 관리 (GET /admin/orders/<id>)
+# ==============================================================================
 @admin_bp.route('/orders/<order_id>', methods=['GET'])
 @admin_required
 def order_detail(order_id):
+    """
+    주문 상세 조회:
+    - 주문 정보, 결제 금액, 배송지 정보, 주문 당시 상품 스냅샷(order_items)
+    - 택배사, 송장번호, 배송추적 공식 링크
+    - 주문 처리 이력(order_logs) 시간순 조회
+    """
     admin_client = get_supabase_admin_client()
 
     try:
@@ -806,12 +895,61 @@ def order_detail(order_id):
         order = ord_res.data[0]
         cur_status = str(order.get('status') or '').upper()
 
-        # 주문 상품 상세 조회
+        # 주문 상품 상세 조회 (주문 시점 스냅샷 그대로 노출)
         items_res = admin_client.table('order_items').select('*').eq('order_id', order_id).order('id').execute()
         order_items = items_res.data or []
 
         # 허용되는 전환 상태 목록
         allowed_next_statuses = ALLOWED_TRANSITIONS.get(cur_status, [])
+
+        # 택배 배송추적 공식 URL 생성
+        tracking_link = None
+        raw_tracking = str(order.get('tracking_number') or '').strip()
+        carrier_name = ''
+
+        if raw_tracking:
+            # "택배사 송장번호" 또는 송장번호 형태 분리
+            parts = raw_tracking.split(maxsplit=1)
+            if len(parts) == 2 and parts[0] in SUPPORTED_CARRIERS:
+                carrier_name = parts[0]
+                pure_no = parts[1]
+            else:
+                pure_no = raw_tracking
+
+            if carrier_name and carrier_name in SUPPORTED_CARRIERS:
+                tpl = SUPPORTED_CARRIERS[carrier_name]['tracking_url']
+                tracking_link = tpl.replace('{tracking_number}', pure_no)
+
+        # 주문 처리 이력(order_logs) 조회 (시간순)
+        logs = []
+        try:
+            logs_res = admin_client.table('order_logs').select('*').eq('order_id', order_id).order('created_at', desc=True).execute()
+            logs = logs_res.data or []
+        except Exception as log_err:
+            logger.warning(f"[Order Logs Fetch Warning] {log_err}")
+
+        # 결제 상태 및 배송 상태 분리 표시
+        # 결제 상태: PAID, PREPARING, SHIPPING, DELIVERED는 '결제 완료' / CANCELLED는 '결제 취소' / PENDING은 '입금 대기'
+        if cur_status in ('PAID', 'PREPARING', 'SHIPPING', 'DELIVERED'):
+            payment_status_label = '결제 완료'
+            payment_badge_class = 'badge bg-success'
+        elif cur_status == 'CANCELLED':
+            payment_status_label = '결제 취소'
+            payment_badge_class = 'badge bg-danger'
+        else:
+            payment_status_label = '입금 대기'
+            payment_badge_class = 'badge bg-secondary'
+
+        # 배송 상태 레이블
+        delivery_status_map = {
+            'PAID': ('미처리 (배송 대기)', 'badge bg-primary'),
+            'PREPARING': ('배송 준비 중', 'badge bg-warning text-dark'),
+            'SHIPPING': ('발송 완료 (배송 중)', 'badge bg-info text-dark'),
+            'DELIVERED': ('배송 완료', 'badge bg-success'),
+            'CANCELLED': ('주문 취소 (배송 중단)', 'badge bg-secondary'),
+            'PENDING_PAYMENT': ('입금 확인 대기', 'badge bg-light text-dark border')
+        }
+        delivery_label, delivery_badge_class = delivery_status_map.get(cur_status, (cur_status, 'badge bg-secondary'))
 
         return render_template(
             'admin/order_detail.html',
@@ -820,7 +958,16 @@ def order_detail(order_id):
             order_items=order_items,
             cur_status=cur_status,
             allowed_next_statuses=allowed_next_statuses,
-            status_labels=STATUS_LABELS
+            status_labels=STATUS_LABELS,
+            supported_carriers=SUPPORTED_CARRIERS,
+            carrier_name=carrier_name,
+            pure_tracking_number=pure_no if raw_tracking else '',
+            tracking_link=tracking_link,
+            payment_status_label=payment_status_label,
+            payment_badge_class=payment_badge_class,
+            delivery_label=delivery_label,
+            delivery_badge_class=delivery_badge_class,
+            order_logs=logs
         )
 
     except Exception as e:
@@ -833,17 +980,21 @@ def order_detail(order_id):
 @admin_required
 def order_update_status(order_id):
     """
-    주문 상태 변경 (POST 전용, CSRF 검증)
-    - 허용된 단계별 배송 상태 전환만 지원
-    - 실제 PG 연동 없는 임의 결제완료/환불 차단
-    - 운송장 번호(tracking_number) 저장 지원
+    주문·배송 상태 변경 및 송장번호 등록/수정 (POST 전용, CSRF 검증)
+    - 발송 처리(SHIPPING) 시 택배사와 송장번호 필수 입력
+    - 송장번호는 문자열(text)로 저장하여 앞자리 0 보존
+    - 취소 처리(CANCELLED) 시 기차감된 재고 복원 (중복 복원 방지)
+    - 상태 변경 및 배송 변경 이력을 order_logs에 기록
     """
     admin_client = get_supabase_admin_client()
+
     new_status = request.form.get('status', '').strip().upper()
+    carrier = request.form.get('carrier', '').strip()
     tracking_number = request.form.get('tracking_number', '').strip()
+    reason = request.form.get('reason', '').strip()
 
     try:
-        ord_res = admin_client.table('orders').select('id, status, order_number').eq('id', order_id).execute()
+        ord_res = admin_client.table('orders').select('*').eq('id', order_id).execute()
         if not ord_res.data:
             flash('주문 정보를 찾을 수 없습니다.', 'warning')
             return redirect(url_for('admin.order_list'))
@@ -851,26 +1002,107 @@ def order_update_status(order_id):
         order = ord_res.data[0]
         cur_status = str(order.get('status') or '').upper()
 
+        # 1. 전환 가능 여부 검증
         allowed = ALLOWED_TRANSITIONS.get(cur_status, [])
-        if new_status != cur_status and new_status not in allowed:
+        if new_status and new_status != cur_status and new_status not in allowed:
             flash(f"현재 상태({STATUS_LABELS.get(cur_status, cur_status)})에서는 선택하신 상태({STATUS_LABELS.get(new_status, new_status)})로 전환할 수 없습니다.", 'danger')
             return redirect(url_for('admin.order_detail', order_id=order_id))
 
+        target_status = new_status if new_status else cur_status
+
+        # 2. 발송 처리(SHIPPING) 시 필수값 검증 (택배사 및 송장번호 필수)
+        if target_status == 'SHIPPING':
+            if not carrier:
+                flash('발송 처리(배송 중) 시 택배사를 반드시 선택해주세요.', 'danger')
+                return redirect(url_for('admin.order_detail', order_id=order_id))
+            if not tracking_number:
+                flash('발송 처리(배송 중) 시 송장번호를 반드시 입력해주세요.', 'danger')
+                return redirect(url_for('admin.order_detail', order_id=order_id))
+
+        # 송장번호 포맷팅 (앞자리 0 보존 문자열)
+        formatted_tracking = order.get('tracking_number') or ''
+        action_type = 'STATUS_CHANGE'
+        if carrier and tracking_number:
+            formatted_tracking = f"{carrier} {tracking_number}"
+            if target_status == 'SHIPPING' and cur_status != 'SHIPPING':
+                action_type = 'SHIPPING_START'
+            elif cur_status == 'SHIPPING':
+                action_type = 'TRACKING_UPDATE'
+
+        if target_status == 'DELIVERED':
+            action_type = 'MANUAL_DELIVERY'
+
+        if target_status == 'CANCELLED':
+            action_type = 'CANCEL'
+            if not reason:
+                flash('주문 취소 시 취소 사유를 반드시 입력해주세요.', 'danger')
+                return redirect(url_for('admin.order_detail', order_id=order_id))
+
+        # 3. 취소(CANCELLED) 처리 시 재고 복원 (이미 취소된 주문이 아닐 때 1회만 복원)
+        if target_status == 'CANCELLED' and cur_status != 'CANCELLED':
+            # 주문 상품 목록 조회
+            items_res = admin_client.table('order_items').select('product_id, option_id, quantity').eq('order_id', order_id).execute()
+            for it in (items_res.data or []):
+                qty = int(it.get('quantity') or 0)
+                oid = it.get('option_id')
+                pid = it.get('product_id')
+
+                if oid and qty > 0:
+                    try:
+                        admin_client.rpc('restore_product_option_stock', {'p_option_id': oid, 'p_quantity': qty}).execute()
+                    except Exception:
+                        try:
+                            # 폴백: option 직접 증액
+                            cur_opt = admin_client.table('product_options').select('stock').eq('id', oid).execute()
+                            if cur_opt.data:
+                                cur_stk = int(cur_opt.data[0].get('stock') or 0)
+                                admin_client.table('product_options').update({'stock': cur_stk + qty}).eq('id', oid).execute()
+                        except Exception as e_opt:
+                            logger.error(f"[Cancel Option Stock Restore Error] {e_opt}")
+                elif pid and qty > 0:
+                    try:
+                        admin_client.rpc('restore_product_stock', {'p_product_id': pid, 'p_quantity': qty}).execute()
+                    except Exception:
+                        try:
+                            cur_prod = admin_client.table('products').select('stock').eq('id', pid).execute()
+                            if cur_prod.data:
+                                cur_stk = int(cur_prod.data[0].get('stock') or 0)
+                                admin_client.table('products').update({'stock': cur_stk + qty}).eq('id', pid).execute()
+                        except Exception as e_prod:
+                            logger.error(f"[Cancel Product Stock Restore Error] {e_prod}")
+
+        # 4. orders 테이블 업데이트
         update_payload = {
+            'status': target_status,
+            'tracking_number': formatted_tracking,
             'updated_at': datetime.now(timezone.utc).isoformat()
         }
-        if new_status and new_status != cur_status:
-            update_payload['status'] = new_status
-
-        if tracking_number:
-            update_payload['tracking_number'] = tracking_number
-
         admin_client.table('orders').update(update_payload).eq('id', order_id).execute()
-        flash(f"주문({order.get('order_number')}) 상태가 정상적으로 갱신되었습니다.", 'success')
+
+        # 5. order_logs 이력 테이블 기록
+        current_admin = getattr(g, 'admin_user', {})
+        log_payload = {
+            'order_id': order_id,
+            'previous_status': cur_status,
+            'new_status': target_status,
+            'carrier': carrier or None,
+            'tracking_number': tracking_number or None,
+            'action_type': action_type,
+            'reason': reason or ('배송 정보 등록 및 발송 처리' if action_type == 'SHIPPING_START' else '관리자 상태 변경'),
+            'actor_id': current_admin.get('id'),
+            'actor_email': current_admin.get('email'),
+            'created_at': datetime.now(timezone.utc).isoformat()
+        }
+        try:
+            admin_client.table('order_logs').insert(log_payload).execute()
+        except Exception as log_err:
+            logger.warning(f"[Order Log Insert Warning] {log_err}")
+
+        flash(f"주문({order.get('order_number')}) 처리가 정상 반영되었습니다. (상태: {STATUS_LABELS.get(target_status, target_status)})", 'success')
 
     except Exception as e:
         logger.error(f"[Admin Order Status Update Error] {e}", exc_info=True)
-        flash(f"주문 상태 갱신 중 오류가 발생했습니다: {e}", 'danger')
+        flash(f"주문 처리 중 오류가 발생했습니다: {e}", 'danger')
 
     return redirect(url_for('admin.order_detail', order_id=order_id))
 

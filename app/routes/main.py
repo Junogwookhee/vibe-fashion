@@ -1022,11 +1022,37 @@ def mypage():
 
         return redirect(url_for('main.mypage'))
 
+    orders = []
     try:
         prof_res = supabase.table('profiles').select('*').eq('id', user_id).execute()
         if prof_res.data:
             profile = prof_res.data[0]
             total_spent = float(profile.get('total_spent') or 0)
+
+        # 사용자의 주문 내역 조회 (배송 상태 및 송장번호 포함)
+        ord_res = supabase.table('orders').select('*').eq('user_id', user_id).order('created_at', desc=True).execute()
+        orders = ord_res.data or []
+
+        # 각 주문별 상품명 요약 연결
+        if orders:
+            order_ids = [o['id'] for o in orders]
+            items_res = supabase.table('order_items').select('order_id, product_name, quantity').in_('order_id', order_ids).execute()
+            items_by_order = {}
+            for it in (items_res.data or []):
+                oid = it['order_id']
+                items_by_order.setdefault(oid, []).append(it)
+
+            for o in orders:
+                its = items_by_order.get(o['id'], [])
+                if its:
+                    first_name = its[0]['product_name']
+                    extra = len(its) - 1
+                    o['summary_title'] = f"{first_name} 외 {extra}건" if extra > 0 else first_name
+                    o['total_item_count'] = sum(x.get('quantity') or 1 for x in its)
+                else:
+                    o['summary_title'] = "주문 상품 1건"
+                    o['total_item_count'] = 1
+
     except Exception as e:
         logger.error(f"[MyPage Profile Error] {e}")
 
@@ -1034,6 +1060,7 @@ def mypage():
         'mypage.html',
         user=user,
         profile=profile,
+        orders=orders,
         formatted_total_spent=f"{int(total_spent):,}원"
     )
 

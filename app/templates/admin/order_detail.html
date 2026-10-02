@@ -21,21 +21,9 @@
                     <i class="bi bi-receipt text-coral"></i>
                     <h2 class="admin-card-title">주문 정보 #{{ order.order_number }}</h2>
                 </div>
-                <div>
-                    {% set st = cur_status %}
-                    {% if st == 'PAID' %}
-                        <span class="badge bg-primary badge-status">결제 완료</span>
-                    {% elif st == 'PREPARING' %}
-                        <span class="badge bg-warning text-dark badge-status">배송 준비 중</span>
-                    {% elif st == 'SHIPPING' %}
-                        <span class="badge bg-info text-dark badge-status">배송 중</span>
-                    {% elif st == 'DELIVERED' %}
-                        <span class="badge bg-success badge-status">배송 완료</span>
-                    {% elif st == 'CANCELLED' %}
-                        <span class="badge bg-secondary badge-status">주문 취소</span>
-                    {% else %}
-                        <span class="badge bg-light text-dark border badge-status">{{ st }}</span>
-                    {% endif %}
+                <div class="d-flex align-items-center gap-2">
+                    <span class="{{ payment_badge_class }} badge-status">{{ payment_status_label }}</span>
+                    <span class="{{ delivery_badge_class }} badge-status">{{ delivery_label }}</span>
                 </div>
             </div>
             <div class="p-4">
@@ -53,8 +41,17 @@
                         <div class="fw-semibold small">{{ order.payment_method or '신용/체크카드' }}</div>
                     </div>
                     <div class="col-6 col-sm-3">
-                        <div class="very-small text-muted mb-1">운송장 번호</div>
-                        <div class="fw-semibold small font-monospace">{{ order.tracking_number or '미등록' }}</div>
+                        <div class="very-small text-muted mb-1">운송장 정보</div>
+                        {% if order.tracking_number %}
+                            <div class="fw-semibold small font-monospace text-dark">{{ order.tracking_number }}</div>
+                            {% if tracking_link %}
+                                <a href="{{ tracking_link }}" target="_blank" class="very-small text-decoration-none fw-semibold text-primary">
+                                    <i class="bi bi-box-arrow-up-right me-1"></i>배송 실시간 조회
+                                </a>
+                            {% endif %}
+                        {% else %}
+                            <div class="very-small text-muted">미등록 (발송 대기)</div>
+                        {% endif %}
                     </div>
                 </div>
             </div>
@@ -123,29 +120,53 @@
             </div>
             <div class="p-3">
                 {% if allowed_next_statuses %}
-                <form method="POST" action="{{ url_for('admin.order_update_status', order_id=order.id) }}">
+                <form method="POST" action="{{ url_for('admin.order_update_status', order_id=order.id) }}" id="orderStatusForm">
                     <!-- CSRF 토큰 -->
                     <input type="hidden" name="csrf_token" value="{{ admin_csrf_token }}">
 
                     <div class="mb-3">
-                        <label for="orderStatusSelect" class="form-label very-small fw-bold text-muted">변경할 다음 상태</label>
-                        <select class="form-select form-select-sm" id="orderStatusSelect" name="status">
+                        <label for="orderStatusSelect" class="form-label very-small fw-bold text-muted">변경할 다음 상태 <span class="text-danger">*</span></label>
+                        <select class="form-select form-select-sm" id="orderStatusSelect" name="status" required>
                             <option value="{{ cur_status }}">현재 상태 유지 ({{ status_labels.get(cur_status, cur_status) }})</option>
                             {% for next_st in allowed_next_statuses %}
-                                <option value="{{ next_st }}">&rarr; {{ status_labels.get(next_st, next_st) }}</option>
+                                <option value="{{ next_st }}" {% if next_st == 'SHIPPING' %}data-require-tracking="true"{% endif %}>&rarr; {{ status_labels.get(next_st, next_st) }}</option>
                             {% endfor %}
                         </select>
                         <div class="very-small text-muted mt-1">
-                            * 비즈니스 규칙에 따라 순차적 배송 상태 전환만 허용됩니다.
+                            * 비즈니스 규칙에 따라 단계별 배송 상태 전환만 허용됩니다.
                         </div>
                     </div>
 
+                    <!-- 택배사 선택 -->
                     <div class="mb-3">
-                        <label for="trackingNumberInput" class="form-label very-small fw-bold text-muted">운송장 번호 (택배사/송장번호)</label>
-                        <input type="text" class="form-control form-control-sm font-monospace" id="trackingNumberInput" name="tracking_number" value="{{ order.tracking_number or '' }}" placeholder="예: CJ대한통운 68912345678">
+                        <label for="carrierSelect" class="form-label very-small fw-bold text-muted">택배사 선택</label>
+                        <select class="form-select form-select-sm" id="carrierSelect" name="carrier">
+                            <option value="">택배사 선택 (발송 시 필수)</option>
+                            {% for c_key, c_val in supported_carriers.items() %}
+                                <option value="{{ c_key }}" {% if carrier_name == c_key %}selected{% endif %}>{{ c_val.name }}</option>
+                            {% endfor %}
+                        </select>
                     </div>
 
-                    <button type="submit" class="btn btn-primary btn-sm w-100 rounded-pill fw-semibold py-2">
+                    <!-- 송장번호 입력 (앞자리 0 보존을 위해 문자열 처리) -->
+                    <div class="mb-3">
+                        <label for="trackingNumberInput" class="form-label very-small fw-bold text-muted">운송장 번호 (숫자/문자열)</label>
+                        <input type="text" class="form-control form-control-sm font-monospace" id="trackingNumberInput" name="tracking_number" value="{{ pure_tracking_number }}" placeholder="예: 68912345678 (앞자리 0 보존)">
+                        <div class="very-small text-muted mt-1">
+                            * 발송 처리 시 송장번호 앞자리 0이 유지되도록 문자열로 안전하게 저장됩니다.
+                        </div>
+                    </div>
+
+                    <!-- 변경 사유 입력 (취소 시 필수) -->
+                    <div class="mb-3">
+                        <label for="statusReasonInput" class="form-label very-small fw-bold text-muted">변경/처리 사유</label>
+                        <input type="text" class="form-control form-control-sm" id="statusReasonInput" name="reason" placeholder="예: 포장 완료 후 CJ대한통운 접수, 고객 변심 취소 승인">
+                        <div class="very-small text-muted mt-1">
+                            * 처리 이력에 시간순으로 자동 영구 기록됩니다.
+                        </div>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary btn-sm w-100 rounded-pill fw-semibold py-2" id="btnSubmitStatus">
                         <i class="bi bi-check-circle me-1"></i>상태 업데이트 반영
                     </button>
                 </form>
@@ -203,7 +224,7 @@
         </div>
 
         <!-- 5. 결제 금액 요약 카드 -->
-        <div class="admin-card mb-0">
+        <div class="admin-card mb-4">
             <div class="admin-card-header">
                 <div class="d-flex align-items-center gap-2">
                     <i class="bi bi-credit-card text-coral"></i>
@@ -223,6 +244,40 @@
                     <span>최종 결제 금액</span>
                     <span class="text-coral fs-6">{{ "{:,}".format((order.payment_amount or order.total_amount or 0)|int) }}원</span>
                 </div>
+            </div>
+        </div>
+
+        <!-- 6. 처리 이력 (시간순 로그) -->
+        <div class="admin-card mb-0">
+            <div class="admin-card-header">
+                <div class="d-flex align-items-center gap-2">
+                    <i class="bi bi-clock-history text-coral"></i>
+                    <h2 class="admin-card-title small">주문·배송 처리 이력</h2>
+                </div>
+            </div>
+            <div class="p-3">
+                {% if order_logs %}
+                <ul class="list-unstyled mb-0 position-relative" style="border-left: 2px solid #e2e8f0; margin-left: 10px; padding-left: 15px;">
+                    {% for log in order_logs %}
+                    <li class="mb-3 position-relative">
+                        <span class="position-absolute rounded-circle bg-coral" style="width: 8px; height: 8px; left: -19px; top: 5px;"></span>
+                        <div class="d-flex justify-content-between align-items-baseline">
+                            <strong class="very-small text-dark">{{ log.new_status }}</strong>
+                            <span class="very-small text-muted">{{ (log.created_at or '')[:19]|replace('T', ' ') }}</span>
+                        </div>
+                        <div class="very-small text-muted mt-1">{{ log.reason or '-' }}</div>
+                        {% if log.tracking_number %}
+                            <div class="very-small text-primary font-monospace mt-1"><i class="bi bi-box-seam me-1"></i>{{ log.carrier }} {{ log.tracking_number }}</div>
+                        {% endif %}
+                        <div class="very-small text-muted opacity-75 mt-1">처리자: {{ log.actor_email or '관리자' }}</div>
+                    </li>
+                    {% endfor %}
+                </ul>
+                {% else %}
+                <div class="text-center py-3 text-muted very-small">
+                    <i class="bi bi-info-circle me-1"></i>아직 기록된 상태 변경 이력이 없습니다.
+                </div>
+                {% endif %}
             </div>
         </div>
     </div>
