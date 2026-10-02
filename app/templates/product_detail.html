@@ -484,7 +484,7 @@
                 const data = await response.json();
                 if (response.ok && data.success) {
                     // 성공 시 장바구니 토스트 알림 및 숫자 증가
-                    addToCart(PRODUCT_NAME + optDesc, qty);
+                    await addToCart(PRODUCT_NAME + optDesc);
                 } else {
                     // 재고 부족 등의 에러 처리
                     alert(data.error || '장바구니 담기에 실패했습니다.');
@@ -496,8 +496,33 @@
                 if (btnAddToCart) btnAddToCart.disabled = false;
             }
         } else {
-            // 단일 상품이거나 옵션 ID가 없는 경우 프론트엔드 카트 반영
-            addToCart(PRODUCT_NAME + optDesc, qty);
+            // 옵션이 없는 단일 상품도 서버 장바구니에 저장
+            try {
+                if (btnAddToCart) btnAddToCart.disabled = true;
+                const response = await fetch('/cart/add', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify({ product_id: PRODUCT_ID, quantity: qty })
+                });
+                const data = await response.json();
+                if (response.status === 401) {
+                    window.location.href = data.redirect_url || '/auth/login';
+                    return;
+                }
+                if (response.ok && data.success) {
+                    await addToCart(PRODUCT_NAME + optDesc);
+                } else {
+                    alert(data.error || '장바구니 담기에 실패했습니다.');
+                }
+            } catch (err) {
+                console.error('[Add to cart error]', err);
+                alert('장바구니 담기 요청 중 통신 오류가 발생했습니다.');
+            } finally {
+                if (btnAddToCart) btnAddToCart.disabled = false;
+            }
         }
     }
 

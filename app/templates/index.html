@@ -124,7 +124,7 @@
                         </button>
 
                         <!-- 이미지 위 빠른 담기 버튼 -->
-                        <button class="btn-quick-cart" type="button" onclick="addToCart('{{ item.name }}')">
+                        <button class="btn-quick-cart" type="button" data-product-id="{{ item.id }}" data-product-name="{{ item.name }}" onclick="handleQuickAdd(this)">
                             <i class="bi bi-bag-plus me-1"></i> 빠른 담기
                         </button>
                     </div>
@@ -152,7 +152,7 @@
                                 {% endif %}
                             </div>
                             
-                            <button class="btn btn-card-add rounded-pill px-3 py-2 btn-sm fw-semibold" onclick="addToCart('{{ item.name }}')">
+                            <button class="btn btn-card-add rounded-pill px-3 py-2 btn-sm fw-semibold" type="button" data-product-id="{{ item.id }}" data-product-name="{{ item.name }}" onclick="handleQuickAdd(this)">
                                 <i class="bi bi-cart-plus me-1"></i>담기
                             </button>
                         </div>
@@ -171,6 +171,27 @@
         </div>
     </div>
 </section>
+
+<div class="modal fade" id="quickAddOptionModal" tabindex="-1" aria-labelledby="quickAddOptionTitle" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header">
+                <h5 class="modal-title fw-bold" id="quickAddOptionTitle">옵션 선택</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="닫기"></button>
+            </div>
+            <div class="modal-body">
+                <label for="quickAddOptionSelect" class="form-label small fw-semibold">색상 및 사이즈</label>
+                <select id="quickAddOptionSelect" class="form-select">
+                    <option value="">옵션을 선택해주세요</option>
+                </select>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">취소</button>
+                <button type="button" class="btn btn-dark" id="quickAddConfirm" disabled>장바구니 담기</button>
+            </div>
+        </div>
+    </div>
+</div>
 
 <!-- 3.5 고객 평점 및 생생 리뷰 게시판 (Customer Reviews & Ratings Board) -->
 <section id="reviews" class="py-5 bg-white border-top border-bottom">
@@ -429,4 +450,113 @@
         </div>
     </div>
 </section>
+
+<script>
+    let pendingQuickAdd = null;
+
+    async function handleQuickAdd(button) {
+        const productId = button.dataset.productId;
+        const productName = button.dataset.productName;
+        if (!productId || button.disabled) return;
+
+        button.disabled = true;
+        try {
+            const response = await fetch(`/api/products/${encodeURIComponent(productId)}/options`, {
+                headers: { 'Accept': 'application/json' }
+            });
+            const data = await response.json();
+            if (!response.ok || !data.success) {
+                throw new Error(data.error || '상품 옵션을 불러오지 못했습니다.');
+            }
+
+            const options = data.options || [];
+            const availableOptions = options.filter(option => Number(option.stock) > 0);
+            if (options.length && !availableOptions.length) {
+                throw new Error('현재 구매 가능한 옵션이 없습니다.');
+            }
+
+            if (availableOptions.length > 1) {
+                openQuickAddOptionModal(productId, productName, options);
+            } else if (availableOptions.length === 1) {
+                await submitQuickAdd({
+                    product_option_id: availableOptions[0].id,
+                    quantity: 1
+                }, productName, formatQuickOption(availableOptions[0]));
+            } else {
+                await submitQuickAdd({ product_id: productId, quantity: 1 }, productName, '');
+            }
+        } catch (error) {
+            alert(error.message || '장바구니 담기에 실패했습니다.');
+        } finally {
+            button.disabled = false;
+        }
+    }
+
+    function formatQuickOption(option) {
+        const parts = [option.color, option.size].filter(Boolean);
+        return parts.length ? ` (${parts.join(' / ')})` : '';
+    }
+
+    function openQuickAddOptionModal(productId, productName, options) {
+        const modalElement = document.getElementById('quickAddOptionModal');
+        const select = document.getElementById('quickAddOptionSelect');
+        const confirmButton = document.getElementById('quickAddConfirm');
+        select.replaceChildren(new Option('옵션을 선택해주세요', ''));
+
+        options.forEach(option => {
+            const stock = Number(option.stock) || 0;
+            const optionElement = new Option(
+                `${formatQuickOption(option).replace(/^ \(|\)$/g, '')} · 재고 ${stock}개`,
+                option.id
+            );
+            optionElement.disabled = stock < 1;
+            select.add(optionElement);
+        });
+
+        pendingQuickAdd = { productId, productName };
+        confirmButton.disabled = true;
+        select.onchange = () => { confirmButton.disabled = !select.value; };
+        confirmButton.onclick = async () => {
+            if (!pendingQuickAdd || !select.value) return;
+            confirmButton.disabled = true;
+            confirmButton.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>담는 중';
+            const selectedOption = options.find(option => String(option.id) === select.value);
+            try {
+                await submitQuickAdd({
+                    product_option_id: select.value,
+                    quantity: 1
+                }, pendingQuickAdd.productName, formatQuickOption(selectedOption));
+                bootstrap.Modal.getOrCreateInstance(modalElement).hide();
+                pendingQuickAdd = null;
+            } catch (error) {
+                alert(error.message || '장바구니 담기에 실패했습니다.');
+            } finally {
+                confirmButton.innerHTML = '장바구니 담기';
+                confirmButton.disabled = !select.value;
+            }
+        };
+
+        bootstrap.Modal.getOrCreateInstance(modalElement).show();
+    }
+
+    async function submitQuickAdd(payload, productName, optionLabel) {
+        const response = await fetch('/cart/add', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
+            },
+            body: JSON.stringify(payload)
+        });
+        const data = await response.json();
+        if (response.status === 401) {
+            window.location.href = data.redirect_url || '/auth/login';
+            return;
+        }
+        if (!response.ok || !data.success) {
+            throw new Error(data.error || '장바구니 담기에 실패했습니다.');
+        }
+        await addToCart(`${productName}${optionLabel}`);
+    }
+</script>
 {% endblock %}
