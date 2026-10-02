@@ -7,7 +7,8 @@ import math
 import logging
 import re
 import secrets
-from datetime import datetime, timezone
+import uuid
+from datetime import datetime, timedelta, timezone
 from functools import wraps
 from urllib.parse import urlparse
 
@@ -27,9 +28,11 @@ from flask import (
 from app.utils.supabase_client import get_supabase_admin_client
 from app.utils.admin_work_alerts import (
     LOW_STOCK_THRESHOLD,
+    SEOUL_TIMEZONE,
     format_seoul_datetime,
     load_work_alerts,
 )
+from app.utils.admin_members import format_member_directory_row
 
 logger = logging.getLogger(__name__)
 
@@ -205,6 +208,275 @@ def work_alerts_api():
     alerts = load_work_alerts(get_supabase_admin_client())
     refreshed_at = format_seoul_datetime(datetime.now(timezone.utc).isoformat())
     return jsonify({'alerts': alerts, 'refreshed_at': refreshed_at})
+
+
+# ======================================================================
+# 회원 조회 (GET /admin/members, GET /admin/members/<member_id>)
+# ======================================================================
+MEMBER_DIRECTORY_COLUMNS = (
+    'member_id, member_id_text, profile_exists, auth_user_exists, display_name, '
+    'nickname, email, phone, account_role, created_at, last_sign_in_at, login_providers'
+)
+MEMBER_DIRECTORY_LIST_COLUMNS = (
+    'member_id, member_id_text, profile_exists, auth_user_exists, display_name, '
+    'nickname, email, created_at, login_providers'
+)
+MEMBER_LOGIN_PROVIDERS = ('email', 'kakao', 'naver')
+MEMBER_PAGE_SIZE = 20
+
+
+def _member_search_pattern(value):
+    escaped = str(value).replace('\\', '\\\\').replace('"', '\\"')
+    escaped = escaped.replace('%', r'\%').replace('_', r'\_')
+    return f'%{escaped}%'
+
+
+def _member_return_params(args):
+    try:
+        page = max(1, int(args.get('return_page', 1)))
+    except (ValueError, TypeError):
+        page = 1
+    provider = args.get('return_provider', '')
+    return {
+        'q': args.get('return_q', '')[:100],
+        'joined_from': args.get('return_joined_from', ''),
+        'joined_to': args.get('return_joined_to', ''),
+        'provider': provider if provider in MEMBER_LOGIN_PROVIDERS else '',
+        'page': page,
+    }
+
+
+def _validated_member_id(value):
+    try:
+        return str(uuid.UUID(str(value)))
+    except (ValueError, TypeError, AttributeError):
+        return ''
+
+
+@admin_bp.route('/members', methods=['GET'])
+@admin_required
+def member_list():
+    """프로필 및 연결된 Auth 정보의 관리자 전용 서버 검색·페이지 조회."""
+    admin_client = get_supabase_admin_client()
+    query_text = request.args.get('q', '').strip()[:100]
+    joined_from = request.args.get('joined_from', '').strip()
+    joined_to = request.args.get('joined_to', '').strip()
+    provider_filter = request.args.get('provider', '').strip().lower()
+    if provider_filter not in MEMBER_LOGIN_PROVIDERS:
+        provider_filter = ''
+    try:
+        page = max(1, int(request.args.get('page', 1)))
+    except (ValueError, TypeError):
+        page = 1
+
+    members = []
+    total_count = None
+    total_pages = 1
+    displayed_count = None
+    list_error = None
+    date_error = None
+
+    try:
+        start_utc = None
+        end_exclusive_utc = None
+        if joined_from:
+            start_utc = datetime.strptime(joined_from, '%Y-%m-%d').replace(
+                tzinfo=SEOUL_TIMEZONE
+            ).astimezone(timezone.utc).isoformat()
+        if joined_to:
+            end_exclusive_utc = (
+                datetime.strptime(joined_to, '%Y-%m-%d').replace(tzinfo=SEOUL_TIMEZONE)
+                + timedelta(days=1)
+            ).astimezone(timezone.utc).isoformat()
+        if joined_from and joined_to and joined_from > joined_to:
+            raise ValueError('가입 기간의 시작일은 종료일보다 늦을 수 없습니다.')
+    except ValueError as exc:
+        date_error = (
+            '가입 기간의 시작일은 종료일보다 늦을 수 없습니다.'
+            if str(exc) == '가입 기간의 시작일은 종료일보다 늦을 수 없습니다.'
+            else '가입 기간을 확인해주세요.'
+        )
+
+    if not date_error:
+        try:
+            def build_member_query():
+                query = admin_client.table('admin_member_directory').select(
+                    MEMBER_DIRECTORY_LIST_COLUMNS,
+                    count='exact'
+                )
+                if query_text:
+                    pattern = _member_search_pattern(query_text)
+                    query = query.or_(
+                        f'display_name.ilike."{pattern}",'
+                        f'nickname.ilike."{pattern}",'
+                        f'email.ilike."{pattern}",'
+                        f'member_id_text.ilike."{pattern}"'
+                    )
+                if start_utc:
+                    query = query.gte('created_at', start_utc)
+                if end_exclusive_utc:
+                    query = query.lt('created_at', end_exclusive_utc)
+                if provider_filter:
+                    query = query.contains('login_providers', [provider_filter])
+                return query.order('created_at', desc=True).order('member_id', desc=True)
+
+            result = build_member_query().range(
+                (page - 1) * MEMBER_PAGE_SIZE,
+                page * MEMBER_PAGE_SIZE - 1
+            ).execute()
+            total_count = result.count
+            if total_count is None:
+                raise ValueError('정확한 회원 검색 건수를 반환하지 않았습니다.')
+            total_pages = max(1, math.ceil(total_count / MEMBER_PAGE_SIZE))
+            if page > total_pages:
+                page = total_pages
+                result = build_member_query().range(
+                    (page - 1) * MEMBER_PAGE_SIZE,
+                    page * MEMBER_PAGE_SIZE - 1
+                ).execute()
+            members = [format_member_directory_row(row) for row in (result.data or [])]
+            displayed_count = len(members)
+        except Exception:
+            logger.error('[Admin Members] 회원 목록 조회에 실패했습니다.')
+            list_error = '회원 목록을 불러오지 못했습니다.'
+            total_count = None
+
+    return render_template(
+        'admin/members.html',
+        active_menu='members',
+        members=members,
+        query_text=query_text,
+        joined_from=joined_from,
+        joined_to=joined_to,
+        provider_filter=provider_filter,
+        provider_options=MEMBER_LOGIN_PROVIDERS,
+        page=page,
+        total_pages=total_pages,
+        total_count=total_count,
+        displayed_count=displayed_count,
+        list_error=list_error,
+        date_error=date_error,
+    )
+
+
+@admin_bp.route('/members/<member_id>', methods=['GET'])
+@admin_required
+def member_detail(member_id):
+    """기존 Auth/Profile 연결과 해당 ID의 주문만 읽습니다."""
+    member_id = _validated_member_id(member_id)
+    if not member_id:
+        abort(404)
+
+    admin_client = get_supabase_admin_client()
+    return_params = _member_return_params(request.args)
+    member = None
+    member_error = None
+    order_state = 'ready'
+    order_error = None
+    order_count = None
+    order_count_display = None
+    recent_orders = []
+    order_items_error = False
+
+    try:
+        member_result = (
+            admin_client.table('admin_member_directory')
+            .select(MEMBER_DIRECTORY_COLUMNS)
+            .eq('member_id', member_id)
+            .limit(1)
+            .execute()
+        )
+        if not member_result.data:
+            return render_template(
+                'admin/member_detail.html',
+                active_menu='members', member=None, member_error=None,
+                order_state='unavailable', order_error=None, order_count=None,
+                order_count_display=None, recent_orders=[], order_items_error=False,
+                member_list_url=url_for('admin.member_list', **return_params),
+            ), 404
+        member = format_member_directory_row(member_result.data[0])
+    except Exception:
+        logger.error('[Admin Members] 회원 기본정보 조회에 실패했습니다.')
+        member_error = '회원 기본정보를 불러오지 못했습니다.'
+
+    if member:
+        try:
+            orders_result = (
+                admin_client.table('orders')
+                .select('id, order_number, status, created_at, total_amount', count='exact')
+                .eq('user_id', member_id)
+                .order('created_at', desc=True)
+                .order('id', desc=True)
+                .limit(5)
+                .execute()
+            )
+            order_count = orders_result.count
+            if order_count is None:
+                raise ValueError('정확한 주문 건수를 반환하지 않았습니다.')
+            order_count_display = order_count
+            recent_orders = orders_result.data or []
+
+            if recent_orders:
+                order_ids = [order['id'] for order in recent_orders]
+                try:
+                    order_items_result = (
+                        admin_client.table('order_items')
+                        .select('order_id, product_name')
+                        .in_('order_id', order_ids)
+                        .order('id')
+                        .execute()
+                    )
+                    items_by_order = {}
+                    for item in order_items_result.data or []:
+                        items_by_order.setdefault(item['order_id'], []).append(item.get('product_name') or '상품명 미등록')
+                except Exception:
+                    logger.error('[Admin Members] 회원 주문 상품 요약 조회에 실패했습니다.')
+                    items_by_order = {}
+                    order_items_error = True
+
+                payment_labels = {
+                    'PAID': '결제 완료', 'PREPARING': '결제 완료', 'SHIPPING': '결제 완료',
+                    'DELIVERED': '결제 완료', 'CANCELLED': '결제 취소',
+                    'PENDING': '입금 대기', 'PENDING_PAYMENT': '입금 대기',
+                }
+                delivery_labels = {
+                    'PAID': '미발송', 'PREPARING': '배송 준비 중', 'SHIPPING': '배송 중',
+                    'DELIVERED': '배송 완료', 'CANCELLED': '배송 중단',
+                    'PENDING': '결제 대기', 'PENDING_PAYMENT': '결제 대기',
+                }
+                for order in recent_orders:
+                    status = str(order.get('status') or '').upper()
+                    names = items_by_order.get(order['id'], [])
+                    if order_items_error:
+                        order['summary_title'] = '상품 정보 조회 실패'
+                    elif names:
+                        order['summary_title'] = f'{names[0]} 외 {len(names) - 1}건' if len(names) > 1 else names[0]
+                    else:
+                        order['summary_title'] = '상품 정보 없음'
+                    order['created_at_display'] = format_seoul_datetime(order.get('created_at'))
+                    order['payment_status_display'] = payment_labels.get(status, '확인 가능한 상태 없음')
+                    order['delivery_status_display'] = delivery_labels.get(status, '확인 가능한 상태 없음')
+        except Exception:
+            logger.error('[Admin Members] 회원 주문 내역 조회에 실패했습니다.')
+            order_state = 'error'
+            order_error = '주문 내역을 불러오지 못했습니다.'
+            order_count = None
+            order_count_display = None
+
+    return render_template(
+        'admin/member_detail.html',
+        active_menu='members',
+        member=member,
+        member_error=member_error,
+        order_state=order_state,
+        order_error=order_error,
+        order_count=order_count,
+        order_count_display=order_count_display,
+        recent_orders=recent_orders,
+        order_items_error=order_items_error,
+        member_list_url=url_for('admin.member_list', **return_params),
+        member_order_url=url_for('admin.order_list', member_id=member_id),
+    )
 
 
 # ==============================================================================
@@ -852,6 +1124,94 @@ def order_list():
             work_task=work_task
         )
 
+    member_filter_id = request.args.get('member_id', '').strip()
+    if member_filter_id:
+        try:
+            member_filter_id = str(uuid.UUID(member_filter_id))
+        except (ValueError, TypeError, AttributeError):
+            abort(404)
+
+        try:
+            member_lookup = (
+                admin_client.table('admin_member_directory')
+                .select('member_id, display_name')
+                .eq('member_id', member_filter_id)
+                .limit(1)
+                .execute()
+            )
+        except Exception:
+            logger.error('[Admin Orders] 회원 주문 필터의 회원 확인에 실패했습니다.')
+            return render_template(
+                'admin/orders.html', active_menu='orders', orders=[],
+                metrics={}, query_text='', status_filter='', period_filter='',
+                page=page, total_pages=1, total_count=None, status_labels=STATUS_LABELS,
+                db_error='회원 주문을 확인하지 못했습니다. 다시 시도해주세요.',
+                member_filter_id=member_filter_id, member_filter_name=''
+            ), 503
+        if not member_lookup.data:
+            abort(404)
+
+        member_filter_name = member_lookup.data[0].get('display_name') or f'이름 미등록 · {member_filter_id[:8]}'
+        try:
+            member_orders_result = (
+                admin_client.table('orders')
+                .select(
+                    'id, order_number, user_id, status, created_at, total_amount, recipient_name',
+                    count='exact'
+                )
+                .eq('user_id', member_filter_id)
+                .order('created_at', desc=True)
+                .order('id', desc=True)
+                .range((page - 1) * per_page, page * per_page - 1)
+                .execute()
+            )
+            total_count = member_orders_result.count
+            if total_count is None:
+                raise ValueError('정확한 회원 주문 건수를 반환하지 않았습니다.')
+            total_pages = max(1, math.ceil(total_count / per_page))
+            orders = member_orders_result.data or []
+            if orders:
+                order_ids = [order['id'] for order in orders]
+                try:
+                    items_result = (
+                        admin_client.table('order_items')
+                        .select('order_id, product_name, quantity')
+                        .in_('order_id', order_ids)
+                        .execute()
+                    )
+                    items_by_order = {}
+                    for item in items_result.data or []:
+                        items_by_order.setdefault(item['order_id'], []).append(item)
+                except Exception:
+                    logger.error('[Admin Orders] 회원 주문 상품 조회에 실패했습니다.')
+                    items_by_order = {}
+
+                for order in orders:
+                    order_items_for_order = items_by_order.get(order['id'], [])
+                    if order_items_for_order:
+                        first_name = order_items_for_order[0].get('product_name') or '상품명 미등록'
+                        extra = len(order_items_for_order) - 1
+                        order['summary_title'] = f'{first_name} 외 {extra}건' if extra else first_name
+                        order['total_item_count'] = sum(item.get('quantity') or 1 for item in order_items_for_order)
+                    else:
+                        order['summary_title'] = '상품 정보 없음'
+                        order['total_item_count'] = 0
+            db_error = None
+        except Exception:
+            logger.error('[Admin Orders] 회원 주문 목록 조회에 실패했습니다.')
+            orders = []
+            total_count = None
+            total_pages = 1
+            db_error = '회원 주문 내역을 불러오지 못했습니다.'
+
+        return render_template(
+            'admin/orders.html', active_menu='orders', orders=orders,
+            metrics={}, query_text='', status_filter='', period_filter='',
+            page=page, total_pages=total_pages, total_count=total_count,
+            status_labels=STATUS_LABELS, db_error=db_error,
+            member_filter_id=member_filter_id, member_filter_name=member_filter_name
+        )
+
     orders = []
     total_count = 0
     total_pages = 1
@@ -1080,7 +1440,8 @@ def order_detail(order_id):
             delivery_badge_class=delivery_badge_class,
             order_logs=logs,
             refunds=refunds,
-            from_task=request.args.get('from_task', '')
+            from_task=request.args.get('from_task', ''),
+            from_member_id=_validated_member_id(request.args.get('from_member_id', ''))
         )
 
     except Exception as e:

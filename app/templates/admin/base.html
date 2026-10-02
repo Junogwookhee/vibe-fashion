@@ -304,6 +304,12 @@
                     </a>
                 </li>
                 <li>
+                    <a href="{{ url_for('admin.member_list') }}" class="admin-menu-link {% if active_menu == 'members' %}active{% endif %}">
+                        <i class="bi bi-people-fill"></i>
+                        <span>회원 조회</span>
+                    </a>
+                </li>
+                <li>
                     <a href="{{ url_for('admin.banner_list') }}" class="admin-menu-link {% if active_menu == 'banners' %}active{% endif %}">
                         <i class="bi bi-megaphone-fill"></i>
                         <span>배너·공지 관리</span>

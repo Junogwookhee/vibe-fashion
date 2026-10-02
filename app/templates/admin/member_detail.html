@@ -1,0 +1,103 @@
+{% extends 'admin/base.html' %}
+
+{% block title %}회원 상세 | VIBE-FASHION 관리자{% endblock %}
+{% block page_title %}회원 상세 조회{% endblock %}
+
+{% block content %}
+<div class="mb-3">
+    <a href="{{ member_list_url }}" class="text-muted small text-decoration-none"><i class="bi bi-arrow-left me-1"></i>검색 목록으로 돌아가기</a>
+</div>
+
+{% if member_error %}
+<div class="alert alert-warning d-flex flex-wrap justify-content-between align-items-center gap-2" role="alert">
+    <span>{{ member_error }}</span>
+    <a href="{{ request.full_path }}" class="alert-link">다시 시도</a>
+</div>
+{% elif member %}
+<section class="admin-card mb-4" aria-labelledby="memberHeading">
+    <div class="admin-card-header flex-wrap gap-2">
+        <div>
+            <h2 id="memberHeading" class="admin-card-title">{{ member.name }}</h2>
+            <div class="very-small text-muted mt-1">회원 ID: <span class="font-monospace text-break">{{ member.id }}</span></div>
+        </div>
+        <a href="{{ url_for('admin.member_detail', member_id=member.id, return_q=request.args.get('return_q', ''), return_joined_from=request.args.get('return_joined_from', ''), return_joined_to=request.args.get('return_joined_to', ''), return_provider=request.args.get('return_provider', ''), return_page=request.args.get('return_page', 1)) }}" class="btn btn-outline-secondary btn-sm">정보 다시 조회</a>
+    </div>
+    <div class="p-3 p-lg-4">
+        {% if not member.profile_exists or not member.auth_user_exists %}
+        <div class="alert alert-warning small" role="status">
+            {% if not member.profile_exists %}회원 프로필 연결이 누락되었습니다. 기존 데이터는 자동 생성하지 않았습니다.{% endif %}
+            {% if not member.auth_user_exists %}인증 계정 연결이 누락되었습니다. ID가 같은 프로필 정보만 표시합니다.{% endif %}
+        </div>
+        {% endif %}
+        <div class="row g-3">
+            <div class="col-12 col-md-6 col-xl-4"><div class="very-small text-muted">이름·닉네임</div><div class="fw-semibold mt-1">{{ member.name }}</div></div>
+            <div class="col-12 col-md-6 col-xl-4"><div class="very-small text-muted">이메일</div><div class="fw-semibold mt-1 text-break">{{ member.email }}</div></div>
+            <div class="col-12 col-md-6 col-xl-4"><div class="very-small text-muted">연락처</div><div class="fw-semibold mt-1">{{ member.phone }}</div></div>
+            <div class="col-12 col-md-6 col-xl-4"><div class="very-small text-muted">로그인 방식</div><div class="fw-semibold mt-1">{{ member.providers }}</div></div>
+            <div class="col-12 col-md-6 col-xl-4"><div class="very-small text-muted">가입일 (한국 시간)</div><div class="fw-semibold mt-1">{{ member.created_at }}</div></div>
+            <div class="col-12 col-md-6 col-xl-4"><div class="very-small text-muted">최근 로그인</div><div class="fw-semibold mt-1">{{ member.last_sign_in_at }}</div></div>
+            <div class="col-12 col-md-6 col-xl-4"><div class="very-small text-muted">관리자 권한 (회원 상태 아님)</div><div class="fw-semibold mt-1">{{ member.account_role }}</div></div>
+        </div>
+        <div class="very-small text-muted mt-3">회원 상태를 나타내는 별도 데이터 필드는 확인되지 않았습니다.</div>
+    </div>
+</section>
+
+<section class="admin-card mb-4" aria-labelledby="memberOrdersHeading">
+    <div class="admin-card-header flex-wrap gap-2">
+        <div>
+            <h2 id="memberOrdersHeading" class="admin-card-title">주문 내역</h2>
+            <div class="very-small text-muted mt-1">상태와 관계없이 해당 회원 ID의 전체 주문 기준</div>
+        </div>
+        <a href="{{ url_for('admin.order_list', member_id=member.id) }}" class="btn btn-outline-dark btn-sm">전체 주문 보기</a>
+    </div>
+    {% if order_state == 'error' %}
+    <div class="p-4 d-flex flex-wrap justify-content-between align-items-center gap-2">
+        <span class="text-warning">{{ order_error }}</span>
+        <a href="{{ request.full_path }}" class="btn btn-outline-secondary btn-sm">다시 시도</a>
+    </div>
+    {% elif order_count_display is not none %}
+    <div class="px-3 pt-3 small">총 주문 <strong>{{ order_count_display }}</strong>건{% if recent_orders %} · 최근 주문 {{ recent_orders[0].created_at_display }}{% else %} · 최근 주문 없음{% endif %}</div>
+    {% if order_items_error %}
+    <div class="alert alert-warning mx-3 mt-3 mb-0 small d-flex justify-content-between gap-2" role="alert">
+        <span>상품 요약을 불러오지 못했습니다.</span><a href="{{ request.full_path }}" class="alert-link text-nowrap">다시 시도</a>
+    </div>
+    {% endif %}
+    {% if recent_orders %}
+    <div class="table-responsive mt-3">
+        <table class="table admin-table align-middle mb-0">
+            <thead><tr><th>주문번호</th><th>주문 일시 (한국 시간)</th><th>대표 상품명</th><th>주문 금액</th><th>결제 상태</th><th>배송 상태</th><th class="text-end">상세</th></tr></thead>
+            <tbody>
+                {% for order in recent_orders %}
+                <tr>
+                    <td class="font-monospace small">{{ order.order_number }}</td>
+                    <td class="small text-nowrap">{{ order.created_at_display }}</td>
+                    <td class="small">{{ order.summary_title }}</td>
+                    <td class="small text-nowrap">{{ "{:,}".format((order.total_amount or 0)|int) }}원</td>
+                    <td class="small">{{ order.payment_status_display }}</td>
+                    <td class="small">{{ order.delivery_status_display }}</td>
+                    <td class="text-end"><a href="{{ url_for('admin.order_detail', order_id=order.id, from_member_id=member.id) }}" class="btn btn-outline-secondary btn-sm">주문 상세</a></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="p-4 text-center text-muted small">조회된 주문이 없습니다.</div>
+    {% endif %}
+    {% else %}
+    <div class="p-4 text-center text-muted small">회원의 주문을 조회할 수 없습니다.</div>
+    {% endif %}
+</section>
+
+<section class="admin-card mb-4" aria-labelledby="memberInquiriesHeading">
+    <div class="admin-card-header"><h2 id="memberInquiriesHeading" class="admin-card-title">문의 내역</h2></div>
+    <div class="p-4 text-muted small">문의 기능 준비 중 · 현재 문의 테이블과 관리자 문의 화면이 없습니다.</div>
+</section>
+{% else %}
+<div class="admin-card p-5 text-center text-muted">
+    <i class="bi bi-person-exclamation fs-2 d-block mb-2"></i>
+    <div class="fw-semibold">회원정보를 표시할 수 없습니다.</div>
+    <a href="{{ member_list_url }}" class="btn btn-outline-secondary btn-sm mt-3">회원 목록으로 돌아가기</a>
+</div>
+{% endif %}
+{% endblock %}

@@ -21,6 +21,16 @@
 </div>
 {% endif %}
 
+{% if member_filter_id %}
+<div class="admin-card p-3 mb-4 d-flex flex-wrap justify-content-between align-items-center gap-2">
+    <div>
+        <strong>회원 주문</strong>
+        <span class="text-muted small ms-2">{{ member_filter_name }} · 회원 ID 기준으로만 조회</span>
+    </div>
+    <a href="{{ url_for('admin.member_detail', member_id=member_filter_id) }}" class="btn btn-outline-secondary btn-sm">회원 상세</a>
+</div>
+{% endif %}
+
 {% if db_error %}
 <div class="alert alert-warning border-0 shadow-sm rounded-3 mb-4 d-flex align-items-center gap-2">
     <i class="bi bi-exclamation-triangle-fill fs-5 text-warning"></i>
@@ -28,7 +38,7 @@
 </div>
 {% endif %}
 
-{% if not work_task %}
+{% if not work_task and not member_filter_id %}
 <!-- 1. 상단 주문·배송 요약 카드 (클릭 시 해당 목록 필터링) -->
 <div class="row g-3 mb-4">
     <!-- 미처리 주문 (결제 완료 후 배송 시작 전) -->
@@ -98,7 +108,7 @@
 {% endif %}
 
 <!-- 2. 검색 및 상세 필터 바 -->
-{% if not work_task %}
+{% if not work_task and not member_filter_id %}
 <div class="admin-card p-3 mb-4">
     <form method="GET" action="{{ url_for('admin.order_list') }}" class="row g-2 align-items-center">
         <!-- 검색어 (주문번호 / 주문자 / 상품명) -->
@@ -224,7 +234,7 @@
                         {% endif %}
                     </td>
                     <td class="text-end">
-                        <a href="{{ url_for('admin.order_detail', order_id=ord.id, from_task=work_task) }}" class="btn btn-outline-dark btn-sm rounded-pill px-3 very-small">
+                        <a href="{{ url_for('admin.order_detail', order_id=ord.id, from_task=work_task, from_member_id=member_filter_id) }}" class="btn btn-outline-dark btn-sm rounded-pill px-3 very-small">
                             주문 상세
                         </a>
                     </td>
@@ -240,15 +250,15 @@
         <nav aria-label="주문 페이지 네비게이션">
             <ul class="pagination pagination-sm mb-0">
                 <li class="page-item {% if page <= 1 %}disabled{% endif %}">
-                    <a class="page-link" href="{{ url_for('admin.order_list', page=page-1, q=query_text, status=status_filter, period=period_filter, task=work_task) }}">이전</a>
+                    <a class="page-link" href="{{ url_for('admin.order_list', page=page-1, q=query_text, status=status_filter, period=period_filter, task=work_task, member_id=member_filter_id) }}">이전</a>
                 </li>
                 {% for p in range(1, total_pages + 1) %}
                     <li class="page-item {% if p == page %}active{% endif %}">
-                        <a class="page-link" href="{{ url_for('admin.order_list', page=p, q=query_text, status=status_filter, period=period_filter, task=work_task) }}">{{ p }}</a>
+                        <a class="page-link" href="{{ url_for('admin.order_list', page=p, q=query_text, status=status_filter, period=period_filter, task=work_task, member_id=member_filter_id) }}">{{ p }}</a>
                     </li>
                 {% endfor %}
                 <li class="page-item {% if page >= total_pages %}disabled{% endif %}">
-                    <a class="page-link" href="{{ url_for('admin.order_list', page=page+1, q=query_text, status=status_filter, period=period_filter, task=work_task) }}">다음</a>
+                    <a class="page-link" href="{{ url_for('admin.order_list', page=page+1, q=query_text, status=status_filter, period=period_filter, task=work_task, member_id=member_filter_id) }}">다음</a>
                 </li>
             </ul>
         </nav>
@@ -259,16 +269,21 @@
     <div class="p-5 text-center text-warning">
         <i class="bi bi-exclamation-triangle fs-2 d-block mb-2"></i>
         <div class="fw-semibold">목록을 불러오지 못했습니다.</div>
-        <a href="{{ url_for('admin.order_list', task=work_task) }}" class="btn btn-outline-secondary btn-sm mt-3">재시도</a>
+        <a href="{{ url_for('admin.order_list', page=1 if member_filter_id else page, q=query_text, status=status_filter, period=period_filter, task=work_task, member_id=member_filter_id) }}" class="btn btn-outline-secondary btn-sm mt-3">재시도</a>
     </div>
     {% else %}
     <div class="p-5 text-center text-muted">
         <i class="bi bi-inbox fs-1 d-block mb-2 text-muted opacity-50"></i>
+        {% if member_filter_id %}
+        <div class="fw-semibold">이 회원의 주문 내역이 없습니다.</div>
+        <a href="{{ url_for('admin.member_detail', member_id=member_filter_id) }}" class="btn btn-outline-secondary btn-sm rounded-pill mt-2">회원 상세로 돌아가기</a>
+        {% else %}
         <div class="fw-semibold">조건에 맞는 주문 내역이 없습니다.</div>
         <p class="very-small mt-1 text-muted">검색어 및 기간/상태 필터를 변경하거나 필터를 초기화해보세요.</p>
         <a href="{{ url_for('admin.order_list') }}" class="btn btn-outline-secondary btn-sm rounded-pill mt-2">
             필터 초기화
         </a>
+        {% endif %}
     </div>
     {% endif %}
 </div>
