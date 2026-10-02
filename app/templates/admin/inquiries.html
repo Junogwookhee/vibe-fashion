@@ -1,0 +1,63 @@
+{% extends 'admin/base.html' %}
+
+{% block title %}고객 문의 관리 | VIBE-FASHION 관리자{% endblock %}
+{% block page_title %}고객 문의 관리{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-end gap-3 mb-4">
+    <div><h2 class="h4 fw-bold mb-1">고객 문의</h2><p class="small text-muted mb-0">접수한 회원에게만 답변이 공개됩니다. 문의 원문은 수정할 수 없습니다.</p></div>
+    {% if total_count is not none %}<div class="small text-muted">검색 결과 <strong class="text-dark">{{ total_count }}</strong>건</div>{% endif %}
+</div>
+
+<section class="admin-card p-3 mb-4" aria-label="문의 검색 및 필터">
+    <form method="GET" action="{{ url_for('admin.inquiry_list') }}" class="row g-2 align-items-end">
+        {% if member_id %}<input type="hidden" name="member_id" value="{{ member_id }}">{% endif %}
+        <div class="col-12 col-md-6 col-xl-3"><label for="inquirySearch" class="form-label small fw-semibold">제목·내용 검색</label><input id="inquirySearch" name="q" class="form-control form-control-sm" maxlength="100" value="{{ query_text }}" placeholder="문의 제목 또는 내용"></div>
+        <div class="col-12 col-md-6 col-xl-2"><label for="authorSearch" class="form-label small fw-semibold">작성자 검색</label><input id="authorSearch" name="author" class="form-control form-control-sm" maxlength="100" value="{{ author_text }}" placeholder="이름 또는 회원 ID"></div>
+        <div class="col-6 col-md-4 col-xl-2"><label for="inquiryType" class="form-label small fw-semibold">문의 유형</label><select id="inquiryType" name="inquiry_type" class="form-select form-select-sm"><option value="">전체 유형</option>{% for key, label in inquiry_types.items() %}<option value="{{ key }}" {{ 'selected' if inquiry_type == key else '' }}>{{ label }}</option>{% endfor %}</select></div>
+        <div class="col-6 col-md-4 col-xl-2"><label for="inquiryStatus" class="form-label small fw-semibold">답변 상태</label><select id="inquiryStatus" name="status" class="form-select form-select-sm"><option value="">전체</option><option value="pending" {{ 'selected' if status_filter == 'pending' else '' }}>답변 대기</option><option value="answered" {{ 'selected' if status_filter == 'answered' else '' }}>답변 완료</option></select></div>
+        <div class="col-6 col-md-4 col-xl-1"><label for="fromDate" class="form-label small fw-semibold">접수 시작</label><input id="fromDate" type="date" name="from_date" class="form-control form-control-sm" value="{{ from_date }}"></div>
+        <div class="col-6 col-md-4 col-xl-1"><label for="toDate" class="form-label small fw-semibold">접수 종료</label><input id="toDate" type="date" name="to_date" class="form-control form-control-sm" value="{{ to_date }}"></div>
+        <div class="col-12 col-md-4 col-xl-1 d-flex gap-2"><button class="btn btn-dark btn-sm flex-grow-1" type="submit"><i class="bi bi-search me-1" aria-hidden="true"></i>검색</button><a href="{{ url_for('admin.inquiry_list', member_id=member_id) if member_id else url_for('admin.inquiry_list') }}" class="btn btn-outline-secondary btn-sm">초기화</a></div>
+    </form>
+    {% if member_id %}<div class="small text-muted mt-2">회원 ID 기준으로 검색 범위가 제한되어 있습니다. <a href="{{ url_for('admin.member_detail', member_id=member_id) }}">회원 상세</a></div>{% endif %}
+</section>
+
+{% if date_error %}<div class="alert alert-warning" role="alert">{{ date_error }}</div>{% endif %}
+{% if list_error %}<div class="alert alert-warning" role="alert">{{ list_error }} <a href="{{ url_for('admin.inquiry_list', q=query_text, author=author_text, inquiry_type=inquiry_type, status=status_filter, from_date=from_date, to_date=to_date, member_id=member_id, page=page) }}" class="alert-link">다시 시도</a></div>
+{% elif inquiries %}
+<div class="admin-card">
+    <div class="table-responsive">
+        <table class="table admin-table mb-0 align-middle">
+            <thead><tr><th>문의번호</th><th>유형</th><th>제목</th><th>작성자</th><th>등록 일시</th><th>답변 상태</th><th class="text-end">상세</th></tr></thead>
+            <tbody>
+                {% for inquiry in inquiries %}
+                {% set return_args = {'q': query_text, 'author': author_text, 'inquiry_type': inquiry_type, 'status': status_filter, 'from_date': from_date, 'to_date': to_date, 'member_id': member_id, 'page': page} %}
+                <tr>
+                    <td class="font-monospace small text-nowrap">{{ '%06d'|format(inquiry.inquiry_number) }}</td>
+                    <td class="small text-nowrap">{{ inquiry.inquiry_type_label }}</td>
+                    <td class="text-break"><a href="{{ url_for('admin.inquiry_detail', inquiry_id=inquiry.id, **return_args) }}" class="fw-semibold text-dark">{{ inquiry.title }}</a></td>
+                    <td class="small text-break">{{ inquiry.author_name }}{% if inquiry.author_name.startswith('회원 ·') %}<span class="d-block font-monospace text-muted very-small">{{ inquiry.user_id_text }}</span>{% endif %}</td>
+                    <td class="small text-muted text-nowrap">{{ inquiry.created_at_display }}</td>
+                    <td><span class="badge {{ 'text-bg-success' if inquiry.status == 'answered' else 'text-bg-warning' }}">{{ inquiry.status_label }}</span></td>
+                    <td class="text-end"><a href="{{ url_for('admin.inquiry_detail', inquiry_id=inquiry.id, **return_args) }}" class="btn btn-outline-secondary btn-sm">상세 보기</a></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% if total_pages > 1 %}
+<nav class="mt-4" aria-label="문의 목록 페이지"><ul class="pagination pagination-sm justify-content-center">
+    {% for page_number in range(1, total_pages + 1) %}
+    <li class="page-item {{ 'active' if page_number == page else '' }}"><a class="page-link" href="{{ url_for('admin.inquiry_list', q=query_text, author=author_text, inquiry_type=inquiry_type, status=status_filter, from_date=from_date, to_date=to_date, member_id=member_id, page=page_number) }}">{{ page_number }}</a></li>
+    {% endfor %}
+</ul></nav>
+{% endif %}
+{% elif not date_error %}
+<div class="admin-card p-5 text-center text-muted">
+    <i class="bi bi-chat-square-text fs-2 d-block mb-2" aria-hidden="true"></i>
+    <div class="fw-semibold">{% if query_text or author_text or inquiry_type or status_filter or from_date or to_date %}검색 조건에 맞는 문의가 없습니다.{% else %}접수된 문의가 없습니다.{% endif %}</div>
+</div>
+{% endif %}
+{% endblock %}

@@ -62,6 +62,7 @@ class AdminWorkAlertTests(unittest.TestCase):
             'admin_active_inventory_items': FakeResponse([], 23),
             'admin_unshipped_orders': FakeResponse([], 11),
             'admin_pending_refund_orders': FakeResponse([], 4),
+            'admin_customer_inquiries': FakeResponse([], 7),
         }
         client = FakeSupabaseClient(responses)
 
@@ -71,8 +72,11 @@ class AdminWorkAlertTests(unittest.TestCase):
         self.assertEqual(alerts['low_stock']['count'], 23)
         self.assertEqual(alerts['unshipped']['count'], 11)
         self.assertEqual(alerts['refunds']['count'], 4)
-        self.assertEqual(alerts['inquiries']['state'], 'unavailable')
-        self.assertIsNone(alerts['inquiries']['count'])
+        self.assertEqual(alerts['inquiries']['state'], 'ready')
+        self.assertEqual(alerts['inquiries']['count'], 7)
+        inquiry_query = client.queries['admin_customer_inquiries'][0]
+        self.assertIn(('eq', 'status', 'pending'), inquiry_query.calls)
+        self.assertIn(('limit', 5), inquiry_query.calls)
         for queries in client.queries.values():
             for query in queries:
                 select_call = next(call for call in query.calls if call[0] == 'select')
@@ -86,8 +90,11 @@ class AdminWorkAlertTests(unittest.TestCase):
             'admin_active_inventory_items': FakeResponse([], 0),
             'admin_unshipped_orders': FakeResponse([], 0),
             'admin_pending_refund_orders': FakeResponse([], 0),
+            'admin_customer_inquiries': FakeResponse([], 0),
         }
-        client = FakeSupabaseClient(responses, fail_tables={'admin_unshipped_orders'})
+        client = FakeSupabaseClient(responses, fail_tables={
+            'admin_unshipped_orders', 'admin_customer_inquiries'
+        })
 
         alerts = load_work_alerts(client)
 
@@ -97,12 +104,15 @@ class AdminWorkAlertTests(unittest.TestCase):
         self.assertIsNone(alerts['unshipped']['count'])
         self.assertEqual(alerts['refunds']['state'], 'ready')
         self.assertEqual(alerts['refunds']['count'], 0)
+        self.assertEqual(alerts['inquiries']['state'], 'error')
+        self.assertIsNone(alerts['inquiries']['count'])
 
     def test_inventory_alert_filters_are_disjoint(self):
         responses = {
             'admin_active_inventory_items': FakeResponse([], 0),
             'admin_unshipped_orders': FakeResponse([], 0),
             'admin_pending_refund_orders': FakeResponse([], 0),
+            'admin_customer_inquiries': FakeResponse([], 0),
         }
         client = FakeSupabaseClient(responses)
 

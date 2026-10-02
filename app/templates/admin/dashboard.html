@@ -169,12 +169,28 @@
                 <div class="p-3">
                     <div class="d-flex justify-content-between align-items-start gap-2">
                         <div>
-                            <h3 class="h6 fw-bold text-muted mb-1">미답변 문의</h3>
-                            <div class="fs-3 fw-bold">—<span class="fs-6 fw-normal ms-1">건</span></div>
-                            <div class="very-small text-muted">문의 접수·답변 관리 기능 미구현</div>
+                            <a href="{{ url_for('admin.inquiry_list', status='pending') }}" class="text-decoration-none text-reset">
+                                <h3 class="h6 fw-bold text-muted mb-1">미답변 문의</h3>
+                                <div class="fs-3 fw-bold">{% if work_alerts.inquiries.count is not none %}{{ work_alerts.inquiries.count }}{% else %}—{% endif %}<span class="fs-6 fw-normal ms-1">건</span></div>
+                                <div class="very-small text-muted">답변을 기다린 문의를 오래된 순으로 확인</div>
+                            </a>
                         </div>
-                        <span class="badge text-bg-light border">준비 중</span>
+                        {% if work_alerts.inquiries.state == 'ready' %}
+                        <a href="{{ url_for('admin.inquiry_list', status='pending') }}" class="btn btn-outline-secondary btn-sm">대기 목록</a>
+                        {% endif %}
                     </div>
+                    {% if work_alerts.inquiries.state == 'error' %}
+                    <div class="alert alert-warning py-2 px-3 small mt-3 mb-0">문의 현황을 불러오지 못했습니다. <a href="{{ url_for('admin.dashboard') }}" class="alert-link">다시 시도</a></div>
+                    {% elif work_alerts.inquiries.count == 0 %}
+                    <div class="small text-muted mt-3">답변 대기 중인 문의가 없습니다.</div>
+                    {% elif work_alerts.inquiries.state == 'ready' %}
+                    <ul class="list-unstyled border-top mt-3 pt-2 mb-0">
+                        {% for item in work_alerts.inquiries.items %}
+                        <li class="py-1 small"><a class="text-decoration-none d-flex justify-content-between gap-2" href="{{ url_for('admin.inquiry_detail', inquiry_id=item.id, status='pending') }}"><span class="text-truncate">#{{ item.inquiry_number }} · {{ item.title }}</span><span class="text-muted flex-shrink-0">{{ item.display_time }}</span></a></li>
+                        {% endfor %}
+                    </ul>
+                    <a href="{{ url_for('admin.inquiry_list', status='pending') }}" class="d-inline-block small fw-semibold mt-2">답변 대기 전체 보기 <i class="bi bi-arrow-right" aria-hidden="true"></i></a>
+                    {% endif %}
                 </div>
             </div>
         </div>

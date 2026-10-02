@@ -25,6 +25,7 @@ from flask import (
     session,
     url_for,
 )
+from werkzeug.exceptions import HTTPException
 from app.utils.supabase_client import get_supabase_admin_client
 from app.utils.admin_work_alerts import (
     LOW_STOCK_THRESHOLD,
@@ -211,6 +212,345 @@ def work_alerts_api():
 
 
 # ======================================================================
+# 고객 문의 관리 (GET /admin/inquiries, 답변 등록/수정)
+# ======================================================================
+INQUIRY_TYPE_LABELS = {
+    'product_size': '상품·사이즈',
+    'delivery': '배송',
+    'order_payment': '주문·결제',
+    'cancel_exchange_return': '취소·교환·반품',
+    'other': '기타',
+}
+INQUIRY_STATUS_LABELS = {'pending': '답변 대기', 'answered': '답변 완료'}
+INQUIRY_PAGE_SIZE = 20
+INQUIRY_REPLY_MAX_LENGTH = 5000
+ADMIN_INQUIRY_LIST_COLUMNS = (
+    'id, inquiry_number, user_id, user_id_text, author_name, author_nickname, '
+    'inquiry_type, title, status, created_at'
+)
+ADMIN_INQUIRY_DETAIL_COLUMNS = (
+    'id, inquiry_number, user_id, user_id_text, author_name, order_id, order_number, '
+    'inquiry_type, title, content, status, reply_text, answered_by, answered_at, '
+    'reply_updated_by, reply_updated_at, reply_version, created_at, updated_at'
+)
+
+
+def _inquiry_search_pattern(value):
+    escaped = str(value).replace('\\', '\\\\').replace('"', '\\"')
+    escaped = escaped.replace('%', r'\%').replace('_', r'\_')
+    return f'%{escaped}%'
+
+
+def _inquiry_return_params(args):
+    try:
+        page = max(1, int(args.get('page', 1)))
+    except (ValueError, TypeError):
+        page = 1
+    status = args.get('status', '')
+    inquiry_type = args.get('inquiry_type', '')
+    raw_member_id = args.get('member_id', '')
+    member_id = _validated_member_id(raw_member_id) if raw_member_id else ''
+    if raw_member_id and not member_id:
+        abort(404)
+    return {
+        'q': args.get('q', '').strip()[:100],
+        'author': args.get('author', '').strip()[:100],
+        'inquiry_type': inquiry_type if inquiry_type in INQUIRY_TYPE_LABELS else '',
+        'status': status if status in ('pending', 'answered') else '',
+        'from_date': args.get('from_date', '').strip(),
+        'to_date': args.get('to_date', '').strip(),
+        'member_id': member_id,
+        'page': page,
+    }
+
+
+def _format_admin_inquiry(row):
+    item = dict(row)
+    item['inquiry_type_label'] = INQUIRY_TYPE_LABELS.get(item.get('inquiry_type'), '기타')
+    item['status_label'] = INQUIRY_STATUS_LABELS.get(item.get('status'), '확인 필요')
+    item['created_at_display'] = format_seoul_datetime(item.get('created_at'))
+    item['answered_at_display'] = format_seoul_datetime(item.get('answered_at'))
+    item['reply_updated_at_display'] = format_seoul_datetime(item.get('reply_updated_at'))
+    return item
+
+
+def _load_admin_inquiry_detail(admin_client, inquiry_id):
+    result = (
+        admin_client.table('admin_customer_inquiries')
+        .select(ADMIN_INQUIRY_DETAIL_COLUMNS)
+        .eq('id', inquiry_id)
+        .limit(1)
+        .execute()
+    )
+    if not result.data:
+        return None
+
+    inquiry = _format_admin_inquiry(result.data[0])
+    history = []
+    history_error = None
+    try:
+        history_result = (
+            admin_client.table('customer_inquiry_reply_history')
+            .select('reply_version, action, previous_reply, new_reply, changed_by, changed_at')
+            .eq('inquiry_id', inquiry_id)
+            .order('reply_version', desc=True)
+            .execute()
+        )
+        for row in history_result.data or []:
+            item = dict(row)
+            item['changed_at_display'] = format_seoul_datetime(item.get('changed_at'))
+            item['changed_by_display'] = f"관리자 · {str(item.get('changed_by') or '')[:8]}"
+            item['action_label'] = '최초 답변' if item.get('action') == 'answered' else '답변 수정'
+            history.append(item)
+    except Exception:
+        logger.error('[Admin Inquiries] 답변 변경 이력 조회에 실패했습니다.')
+        history_error = '답변 변경 이력을 불러오지 못했습니다.'
+    return {'inquiry': inquiry, 'history': history, 'history_error': history_error}
+
+
+def _render_admin_inquiry_detail(detail, return_params, reply_draft='', reply_error=None, status=200):
+    inquiry = detail['inquiry']
+    order_detail_url = None
+    if inquiry.get('order_id'):
+        order_params = {'from_inquiry_id': inquiry['id']}
+        for key in ('q', 'author', 'inquiry_type', 'status', 'from_date', 'to_date', 'member_id', 'page'):
+            order_params[f'inquiry_{key}'] = return_params.get(key, '')
+        order_detail_url = url_for('admin.order_detail', order_id=inquiry['order_id'], **order_params)
+    return render_template(
+        'admin/inquiry_detail.html',
+        active_menu='inquiries',
+        inquiry=inquiry,
+        history=detail['history'],
+        history_error=detail['history_error'],
+        reply_draft=reply_draft if reply_draft else inquiry.get('reply_text') or '',
+        reply_error=reply_error,
+        return_params=return_params,
+        return_url=url_for('admin.inquiry_list', **return_params),
+        member_detail_url=url_for('admin.member_detail', member_id=inquiry['user_id']),
+        order_detail_url=order_detail_url,
+    ), status
+
+
+@admin_bp.route('/inquiries', methods=['GET'])
+@admin_required
+def inquiry_list():
+    admin_client = get_supabase_admin_client()
+    return_params = _inquiry_return_params(request.args)
+    query_text = return_params['q']
+    author_text = return_params['author']
+    inquiry_type = return_params['inquiry_type']
+    status_filter = return_params['status']
+    from_date = return_params['from_date']
+    to_date = return_params['to_date']
+    member_id = return_params['member_id']
+    page = return_params['page']
+
+    date_error = None
+    start_utc = None
+    end_exclusive_utc = None
+    try:
+        if from_date:
+            start_utc = datetime.strptime(from_date, '%Y-%m-%d').replace(
+                tzinfo=SEOUL_TIMEZONE
+            ).astimezone(timezone.utc).isoformat()
+        if to_date:
+            end_exclusive_utc = (
+                datetime.strptime(to_date, '%Y-%m-%d').replace(tzinfo=SEOUL_TIMEZONE)
+                + timedelta(days=1)
+            ).astimezone(timezone.utc).isoformat()
+        if from_date and to_date and from_date > to_date:
+            raise ValueError('기간 시작일은 종료일보다 늦을 수 없습니다.')
+    except ValueError as exc:
+        date_error = (
+            str(exc) if str(exc) == '기간 시작일은 종료일보다 늦을 수 없습니다.'
+            else '접수 기간을 확인해주세요.'
+        )
+
+    inquiries = []
+    total_count = None
+    total_pages = 1
+    list_error = None
+
+    def build_query():
+        query = admin_client.table('admin_customer_inquiries').select(
+            ADMIN_INQUIRY_LIST_COLUMNS, count='exact'
+        )
+        if query_text:
+            pattern = _inquiry_search_pattern(query_text)
+            query = query.or_(f'title.ilike."{pattern}",content.ilike."{pattern}"')
+        if author_text:
+            pattern = _inquiry_search_pattern(author_text)
+            query = query.or_(
+                f'author_name.ilike."{pattern}",author_nickname.ilike."{pattern}",'
+                f'user_id_text.ilike."{pattern}"'
+            )
+        if inquiry_type:
+            query = query.eq('inquiry_type', inquiry_type)
+        if status_filter:
+            query = query.eq('status', status_filter)
+        if member_id:
+            query = query.eq('user_id', member_id)
+        if start_utc:
+            query = query.gte('created_at', start_utc)
+        if end_exclusive_utc:
+            query = query.lt('created_at', end_exclusive_utc)
+        return query.order('created_at', desc=status_filter != 'pending').order(
+            'id', desc=status_filter != 'pending'
+        )
+
+    if not date_error:
+        try:
+            result = build_query().range(
+                (page - 1) * INQUIRY_PAGE_SIZE,
+                page * INQUIRY_PAGE_SIZE - 1
+            ).execute()
+            total_count = result.count
+            if total_count is None:
+                raise ValueError('정확한 문의 건수를 반환하지 않았습니다.')
+            total_pages = max(1, math.ceil(total_count / INQUIRY_PAGE_SIZE))
+            if page > total_pages:
+                page = total_pages
+                result = build_query().range(
+                    (page - 1) * INQUIRY_PAGE_SIZE,
+                    page * INQUIRY_PAGE_SIZE - 1
+                ).execute()
+            inquiries = [_format_admin_inquiry(row) for row in (result.data or [])]
+        except Exception:
+            logger.error('[Admin Inquiries] 문의 목록 조회에 실패했습니다.')
+            list_error = '문의 목록을 불러오지 못했습니다. 잠시 후 다시 시도해주세요.'
+            total_count = None
+
+    return render_template(
+        'admin/inquiries.html',
+        active_menu='inquiries',
+        inquiries=inquiries,
+        query_text=query_text,
+        author_text=author_text,
+        inquiry_type=inquiry_type,
+        inquiry_types=INQUIRY_TYPE_LABELS,
+        status_filter=status_filter,
+        from_date=from_date,
+        to_date=to_date,
+        member_id=member_id,
+        page=page,
+        total_pages=total_pages,
+        total_count=total_count,
+        date_error=date_error,
+        list_error=list_error,
+    ), 503 if list_error else 200
+
+
+@admin_bp.route('/inquiries/<inquiry_id>', methods=['GET'])
+@admin_required
+def inquiry_detail(inquiry_id):
+    inquiry_id = _validated_member_id(inquiry_id)
+    if not inquiry_id:
+        abort(404)
+    return_params = _inquiry_return_params(request.args)
+    try:
+        detail = _load_admin_inquiry_detail(get_supabase_admin_client(), inquiry_id)
+        if not detail:
+            abort(404)
+        return _render_admin_inquiry_detail(detail, return_params)
+    except HTTPException:
+        raise
+    except Exception:
+        logger.error('[Admin Inquiries] 문의 상세 조회에 실패했습니다.')
+        return render_template(
+            'admin/inquiry_detail.html',
+            active_menu='inquiries', inquiry=None, history=[],
+            history_error=None, reply_draft='', reply_error='문의 내용을 불러오지 못했습니다.',
+            return_params=return_params,
+            return_url=url_for('admin.inquiry_list', **return_params),
+            member_detail_url=None, order_detail_url=None,
+        ), 503
+
+
+@admin_bp.route('/inquiries/<inquiry_id>/reply', methods=['POST'])
+@admin_required
+def inquiry_reply(inquiry_id):
+    inquiry_id = _validated_member_id(inquiry_id)
+    if not inquiry_id:
+        abort(404)
+    admin_client = get_supabase_admin_client()
+    return_params = _inquiry_return_params(request.args)
+    reply_text = request.form.get('reply_text', '').strip()
+    reply_error = None
+    response_status = 400
+    expected_version = request.form.get('expected_version', '')
+
+    if not reply_text:
+        reply_error = '답변 내용을 입력해주세요.'
+    elif len(reply_text) > INQUIRY_REPLY_MAX_LENGTH:
+        reply_error = f'답변은 {INQUIRY_REPLY_MAX_LENGTH:,}자 이내로 입력해주세요.'
+    try:
+        expected_version = int(expected_version)
+        if expected_version < 0:
+            raise ValueError
+    except (ValueError, TypeError):
+        expected_version = None
+        reply_error = '문의 화면을 새로고침한 뒤 답변을 다시 입력해주세요.'
+
+    try:
+        detail = _load_admin_inquiry_detail(admin_client, inquiry_id)
+        if not detail:
+            abort(404)
+    except HTTPException:
+        raise
+    except Exception:
+        logger.error('[Admin Inquiries] 답변 저장 전 문의 조회에 실패했습니다.')
+        return render_template(
+            'admin/inquiry_detail.html',
+            active_menu='inquiries', inquiry=None, history=[], history_error=None,
+            reply_draft=reply_text, reply_error='문의 정보를 불러오지 못했습니다. 입력한 답변은 유지했습니다.',
+            return_params=return_params, return_url=url_for('admin.inquiry_list', **return_params),
+            member_detail_url=None, order_detail_url=None,
+        ), 503
+
+    if not reply_error:
+        try:
+            rpc_result = admin_client.rpc('save_customer_inquiry_reply', {
+                'p_inquiry_id': inquiry_id,
+                'p_admin_id': g.admin_user['id'],
+                'p_reply': reply_text,
+                'p_expected_version': expected_version,
+            }).execute()
+            if not rpc_result.data:
+                raise ValueError('답변 저장 결과를 반환하지 않았습니다.')
+            flash('답변이 저장되어 고객에게 공개되었습니다.', 'success')
+            return redirect(url_for('admin.inquiry_detail', inquiry_id=inquiry_id, **return_params))
+        except Exception as exc:
+            logger.error('[Admin Inquiries] 답변 저장 RPC에 실패했습니다.')
+            try:
+                latest_detail = _load_admin_inquiry_detail(admin_client, inquiry_id)
+                if not latest_detail:
+                    abort(404)
+                if latest_detail['inquiry'].get('reply_text') == reply_text:
+                    flash('답변이 저장되어 고객에게 공개되었습니다.', 'success')
+                    return redirect(url_for('admin.inquiry_detail', inquiry_id=inquiry_id, **return_params))
+                detail = latest_detail
+            except HTTPException:
+                raise
+            except Exception:
+                pass
+            if 'inquiry_reply_version_conflict' in str(exc):
+                reply_error = '다른 관리자가 답변을 먼저 수정했습니다. 최신 답변을 확인하고 다시 등록해주세요.'
+                response_status = 409
+            else:
+                reply_error = '답변 저장에 실패했습니다. 입력한 내용은 유지했습니다. 잠시 후 다시 시도해주세요.'
+                response_status = 503
+
+    detail['inquiry']['form_expected_version'] = detail['inquiry'].get('reply_version') or 0
+    return _render_admin_inquiry_detail(
+        detail,
+        return_params,
+        reply_draft=reply_text,
+        reply_error=reply_error,
+        status=response_status,
+    )
+
+
+# ======================================================================
 # 회원 조회 (GET /admin/members, GET /admin/members/<member_id>)
 # ======================================================================
 MEMBER_DIRECTORY_COLUMNS = (
@@ -377,6 +717,10 @@ def member_detail(member_id):
     order_count_display = None
     recent_orders = []
     order_items_error = False
+    member_inquiries = []
+    member_inquiry_count = None
+    member_inquiries_state = 'ready'
+    member_inquiries_error = None
 
     try:
         member_result = (
@@ -463,6 +807,30 @@ def member_detail(member_id):
             order_count = None
             order_count_display = None
 
+        try:
+            inquiries_result = (
+                admin_client.table('customer_inquiries')
+                .select(
+                    'id, inquiry_number, inquiry_type, title, status, created_at',
+                    count='exact'
+                )
+                .eq('user_id', member_id)
+                .order('created_at', desc=True)
+                .limit(5)
+                .execute()
+            )
+            member_inquiry_count = inquiries_result.count
+            if member_inquiry_count is None:
+                raise ValueError('정확한 회원 문의 건수를 반환하지 않았습니다.')
+            member_inquiries = [
+                _format_admin_inquiry(row) for row in (inquiries_result.data or [])
+            ]
+        except Exception:
+            logger.error('[Admin Members] 회원 문의 내역 조회에 실패했습니다.')
+            member_inquiries_state = 'error'
+            member_inquiries_error = '회원 문의 내역을 불러오지 못했습니다.'
+            member_inquiry_count = None
+
     return render_template(
         'admin/member_detail.html',
         active_menu='members',
@@ -476,6 +844,11 @@ def member_detail(member_id):
         order_items_error=order_items_error,
         member_list_url=url_for('admin.member_list', **return_params),
         member_order_url=url_for('admin.order_list', member_id=member_id),
+        member_inquiries=member_inquiries,
+        member_inquiry_count=member_inquiry_count,
+        member_inquiries_state=member_inquiries_state,
+        member_inquiries_error=member_inquiries_error,
+        member_inquiry_list_url=url_for('admin.inquiry_list', member_id=member_id),
     )
 
 
@@ -1441,7 +1814,18 @@ def order_detail(order_id):
             order_logs=logs,
             refunds=refunds,
             from_task=request.args.get('from_task', ''),
-            from_member_id=_validated_member_id(request.args.get('from_member_id', ''))
+            from_member_id=_validated_member_id(request.args.get('from_member_id', '')),
+            inquiry_return_url=(
+                url_for(
+                    'admin.inquiry_detail',
+                    inquiry_id=_validated_member_id(request.args.get('from_inquiry_id', '')),
+                    **{
+                        key: request.args.get(f'inquiry_{key}', '')
+                        for key in ('q', 'author', 'inquiry_type', 'status', 'from_date', 'to_date', 'member_id', 'page')
+                    }
+                )
+                if _validated_member_id(request.args.get('from_inquiry_id', '')) else None
+            )
         )
 
     except Exception as e:

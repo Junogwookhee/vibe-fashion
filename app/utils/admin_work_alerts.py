@@ -97,5 +97,13 @@ def load_work_alerts(admin_client):
     )
     alerts['refunds'] = _query_alert('refunds', refunds_query, 'requested_at')
 
-    alerts['inquiries'] = {'state': 'unavailable', 'count': None, 'items': []}
+    inquiries_query = (
+        admin_client.table('admin_customer_inquiries')
+        .select('id, inquiry_number, inquiry_type, title, author_name, created_at', count='exact')
+        .eq('status', 'pending')
+        .order('created_at')
+        .order('id')
+        .limit(ALERT_LIMIT)
+    )
+    alerts['inquiries'] = _query_alert('inquiries', inquiries_query, 'created_at')
     return alerts

@@ -72,6 +72,8 @@ class FakeQuery:
             return FakeResponse(self.client.unshipped_rows, self.client.unshipped_count)
         if self.table == 'admin_pending_refund_orders':
             return FakeResponse(self.client.refund_rows, self.client.refund_count)
+        if self.table == 'admin_customer_inquiries':
+            return FakeResponse(self.client.inquiry_rows, self.client.inquiry_count)
         if self.table == 'orders':
             return FakeResponse(self.client.orders)
         if self.table == 'order_items':
@@ -96,6 +98,8 @@ class FakeSupabaseClient:
         self.orders = []
         self.order_items = []
         self.refund_details = []
+        self.inquiry_rows = []
+        self.inquiry_count = 0
 
     def table(self, table):
         return FakeQuery(self, table)
@@ -137,7 +141,8 @@ class AdminWorkAlertRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json['alerts']['refunds']['count'], 0)
         self.assertEqual(response.json['alerts']['refunds']['state'], 'ready')
-        self.assertEqual(response.json['alerts']['inquiries']['state'], 'unavailable')
+        self.assertEqual(response.json['alerts']['inquiries']['state'], 'ready')
+        self.assertEqual(response.json['alerts']['inquiries']['count'], 0)
         self.assertNotIn('recipient_phone', str(response.json))
         self.assertNotIn('shipping_address', str(response.json))
 

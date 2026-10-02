@@ -90,6 +90,11 @@ class FakeQuery:
         if self.table == 'order_items':
             order_ids = next((call[2] for call in self.calls if call[0] == 'in' and call[1] == 'order_id'), [])
             return FakeResponse([item for item in self.client.order_items if item['order_id'] in order_ids])
+        if self.table == 'customer_inquiries':
+            wanted_user = next((call[2] for call in self.calls if call[0] == 'eq' and call[1] == 'user_id'), None)
+            rows = [row for row in self.client.inquiries if not wanted_user or row['user_id'] == wanted_user]
+            count_requested = bool(self.select_args and self.select_args[1].get('count') == 'exact')
+            return FakeResponse(rows, len(rows) if count_requested else None)
         return FakeResponse([])
 
 
@@ -103,6 +108,7 @@ class FakeSupabaseClient:
         self.members = []
         self.orders = []
         self.order_items = []
+        self.inquiries = []
 
     def table(self, table):
         return FakeQuery(self, table)
@@ -279,7 +285,8 @@ class AdminMemberRouteTests(unittest.TestCase):
         self.assertIn('Coat', body)
         self.assertIn('총 주문', body)
         self.assertIn('6', body)
-        self.assertIn('문의 기능 준비 중', body)
+        self.assertIn('문의 내역', body)
+        self.assertIn('이 회원이 등록한 문의가 없습니다.', body)
         order_query = next(query for table, query in db.queries if table == 'orders')
         self.assertIn(('eq', 'user_id', MEMBER_ID), order_query.calls)
         select_call = next(call for call in order_query.calls if call[0] == 'select')
@@ -309,6 +316,30 @@ class AdminMemberRouteTests(unittest.TestCase):
         self.assertEqual(select_call[2].get('count'), 'exact')
         self.assertNotIn('shipping_address', select_call[1][0])
         self.assertNotIn('recipient_phone', select_call[1][0])
+
+    def test_member_detail_shows_only_inquiries_for_that_uuid(self):
+        self.sign_in()
+        db = FakeSupabaseClient()
+        db.members = [member_row()]
+        db.inquiries = [{
+            'id': '33333333-3333-4333-8333-333333333333', 'user_id': MEMBER_ID,
+            'inquiry_number': 8, 'inquiry_type': 'delivery', 'title': '회원 배송 문의',
+            'status': 'pending', 'created_at': '2026-09-01T00:00:00Z',
+        }, {
+            'id': '44444444-4444-4444-8444-444444444444', 'user_id': OTHER_MEMBER_ID,
+            'inquiry_number': 9, 'inquiry_type': 'other', 'title': '다른 회원 문의',
+            'status': 'pending', 'created_at': '2026-09-02T00:00:00Z',
+        }]
+
+        with patch('app.routes.admin.get_supabase_admin_client', return_value=db):
+            response = self.client.get(f'/admin/members/{MEMBER_ID}')
+
+        self.assertEqual(response.status_code, 200)
+        body = response.get_data(as_text=True)
+        self.assertIn('회원 배송 문의', body)
+        self.assertNotIn('다른 회원 문의', body)
+        inquiry_query = next(query for table, query in db.queries if table == 'customer_inquiries')
+        self.assertIn(('eq', 'user_id', MEMBER_ID), inquiry_query.calls)
 
     def test_empty_member_orders_link_back_to_that_member(self):
         self.sign_in()

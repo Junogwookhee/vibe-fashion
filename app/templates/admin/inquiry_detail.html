@@ -1,0 +1,87 @@
+{% extends 'admin/base.html' %}
+
+{% block title %}문의 상세 | VIBE-FASHION 관리자{% endblock %}
+{% block page_title %}고객 문의 상세{% endblock %}
+
+{% block content %}
+<div class="mb-3"><a href="{{ return_url }}" class="small text-muted text-decoration-none"><i class="bi bi-arrow-left me-1" aria-hidden="true"></i>문의 목록으로 돌아가기</a></div>
+{% with messages = get_flashed_messages(with_categories=true) %}
+{% for category, message in messages %}<div class="alert alert-{{ 'success' if category == 'success' else 'warning' }}" role="status">{{ message }}</div>{% endfor %}
+{% endwith %}
+{% if reply_error %}<div class="alert alert-warning" role="alert">{{ reply_error }}</div>{% endif %}
+{% if not inquiry %}
+<div class="admin-card p-5 text-center text-muted"><i class="bi bi-exclamation-circle fs-2 d-block mb-2" aria-hidden="true"></i><div class="fw-semibold">문의 상세를 표시할 수 없습니다.</div></div>
+{% else %}
+<div class="row g-4">
+    <div class="col-12 col-xl-7">
+        <section class="admin-card mb-4" aria-labelledby="inquiryInfoHeading">
+            <div class="admin-card-header flex-wrap gap-2"><h2 id="inquiryInfoHeading" class="admin-card-title">문의번호 {{ '%06d'|format(inquiry.inquiry_number) }}</h2><span class="badge {{ 'text-bg-success' if inquiry.status == 'answered' else 'text-bg-warning' }}">{{ inquiry.status_label }}</span></div>
+            <div class="p-3 p-md-4">
+                <dl class="row small mb-3">
+                    <dt class="col-sm-3 text-muted">유형</dt><dd class="col-sm-9">{{ inquiry.inquiry_type_label }}</dd>
+                    <dt class="col-sm-3 text-muted">작성자</dt><dd class="col-sm-9 text-break">{{ inquiry.author_name }} <a href="{{ member_detail_url }}" class="ms-2">회원 상세</a><span class="d-block text-muted font-monospace very-small">{{ inquiry.user_id }}</span></dd>
+                    <dt class="col-sm-3 text-muted">등록 일시</dt><dd class="col-sm-9">{{ inquiry.created_at_display }}</dd>
+                    <dt class="col-sm-3 text-muted">관련 주문</dt><dd class="col-sm-9">{% if order_detail_url %}<a href="{{ order_detail_url }}">주문 상세{% if inquiry.order_number %} · #{{ inquiry.order_number }}{% endif %}</a>{% else %}<span class="text-muted">연결된 주문 없음</span>{% endif %}</dd>
+                </dl>
+                <h3 class="h5 fw-bold text-break">{{ inquiry.title }}</h3>
+                <div class="inquiry-copy text-break border-top pt-3 mt-3">{{ inquiry.content }}</div>
+            </div>
+        </section>
+
+        <section class="admin-card" aria-labelledby="inquiryHistoryHeading">
+            <div class="admin-card-header"><h2 id="inquiryHistoryHeading" class="admin-card-title">내부 답변 변경 이력</h2></div>
+            {% if history_error %}<div class="p-3 small text-warning">{{ history_error }}</div>
+            {% elif history %}
+            <div class="list-group list-group-flush">
+                {% for entry in history %}
+                <div class="list-group-item p-3">
+                    <div class="d-flex flex-wrap justify-content-between gap-2 small"><strong>{{ entry.action_label }} · {{ entry.reply_version }}차</strong><span class="text-muted">{{ entry.changed_by_display }} · {{ entry.changed_at_display }}</span></div>
+                    {% if entry.previous_reply %}<div class="small text-muted mt-2">이전 답변</div><div class="inquiry-copy small">{{ entry.previous_reply }}</div>{% endif %}
+                    <div class="small text-muted mt-2">저장된 답변</div><div class="inquiry-copy small">{{ entry.new_reply }}</div>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}<div class="p-3 small text-muted">아직 등록된 답변이 없습니다.</div>{% endif %}
+        </section>
+    </div>
+
+    <div class="col-12 col-xl-5">
+        <section class="admin-card" aria-labelledby="replyHeading">
+            <div class="admin-card-header"><h2 id="replyHeading" class="admin-card-title">{{ '답변 수정' if inquiry.status == 'answered' else '답변 작성' }}</h2></div>
+            <div class="p-3 p-md-4">
+                {% if inquiry.reply_text %}<div class="small text-muted mb-2">현재 고객에게 공개된 최신 답변</div><div class="inquiry-copy bg-light border rounded-2 p-3 mb-3">{{ inquiry.reply_text }}</div>{% endif %}
+                {% if inquiry.reply_version and inquiry.reply_version > 1 %}<div class="small text-muted mb-3">최근 수정: {{ inquiry.reply_updated_at_display }} · 수정 {{ inquiry.reply_version - 1 }}회</div>{% endif %}
+                <form method="POST" action="{{ url_for('admin.inquiry_reply', inquiry_id=inquiry.id, **return_params) }}" id="inquiryReplyForm">
+                    <input type="hidden" name="csrf_token" value="{{ admin_csrf_token }}">
+                    <input type="hidden" name="expected_version" value="{{ inquiry.form_expected_version if inquiry.form_expected_version is defined else inquiry.reply_version or 0 }}">
+                    <label for="replyText" class="form-label fw-semibold">관리자 답변</label>
+                    <textarea id="replyText" name="reply_text" class="form-control inquiry-copy" rows="10" maxlength="5000" required>{{ reply_draft }}</textarea>
+                    <div class="d-flex justify-content-between mt-1"><small class="text-muted">최대 5,000자</small><small class="text-muted"><span id="replyCount">{{ reply_draft|length }}</span>/5,000</small></div>
+                    <div class="alert alert-info small mt-3 mb-3">‘답변 등록’을 누르면 답변이 고객의 문의 상세에 즉시 공개됩니다. 취소·환불 등 실제 주문 처리는 별도로 진행해야 합니다.</div>
+                    <button type="submit" class="btn btn-dark w-100" id="replySubmit"><i class="bi bi-send me-1" aria-hidden="true"></i>{{ '답변 수정 저장' if inquiry.status == 'answered' else '답변 등록' }}</button>
+                </form>
+            </div>
+        </section>
+    </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    .inquiry-copy { white-space: pre-wrap; overflow-wrap: anywhere; }
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    const replyForm = document.getElementById('inquiryReplyForm');
+    if (replyForm) {
+        const replyText = document.getElementById('replyText');
+        const replyCount = document.getElementById('replyCount');
+        const replySubmit = document.getElementById('replySubmit');
+        replyText.addEventListener('input', () => { replyCount.textContent = replyText.value.length; });
+        replyForm.addEventListener('submit', () => { replySubmit.disabled = true; replySubmit.textContent = '저장 중…'; });
+    }
+</script>
+{% endblock %}

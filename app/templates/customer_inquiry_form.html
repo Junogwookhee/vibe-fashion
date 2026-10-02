@@ -1,0 +1,70 @@
+{% extends 'base.html' %}
+
+{% block title %}문의 작성 | VIBE-FASHION{% endblock %}
+
+{% block content %}
+<section class="py-5 bg-surface inquiry-page">
+    <div class="container" style="max-width: 820px;">
+        <nav aria-label="breadcrumb" class="small mb-3">
+            <a href="{{ url_for('inquiries.customer_list') }}" class="text-muted text-decoration-none">1:1 문의 내역</a>
+            <span class="text-muted mx-2">/</span><span aria-current="page">문의 작성</span>
+        </nav>
+        <div class="d-flex flex-wrap justify-content-between align-items-end gap-2 mb-4">
+            <div><h1 class="h3 fw-bold mb-1">문의 작성</h1><p class="small text-muted mb-0">문의 내용은 고객센터와 작성자에게만 공개됩니다.</p></div>
+            <a href="{{ url_for('inquiries.customer_list') }}" class="btn btn-outline-secondary btn-sm">내 문의</a>
+        </div>
+
+        {% if errors.get('form') %}<div class="alert alert-warning" role="alert">{{ errors.form }}</div>{% endif %}
+        {% if orders_error %}<div class="alert alert-info small" role="status">{{ orders_error }}</div>{% endif %}
+
+        <form method="POST" novalidate class="bg-white border rounded-2 p-3 p-md-4">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="submission_token" value="{{ submission_token }}">
+            <div class="mb-3">
+                <label for="inquiryType" class="form-label fw-semibold">문의 유형 <span class="text-danger">*</span></label>
+                <select id="inquiryType" name="inquiry_type" class="form-select" required>
+                    <option value="">유형을 선택해주세요</option>
+                    {% for value, label in inquiry_types %}<option value="{{ value }}" {{ 'selected' if values.get('inquiry_type') == value else '' }}>{{ label }}</option>{% endfor %}
+                </select>
+                {% if errors.get('inquiry_type') %}<div class="small text-danger mt-1">{{ errors.inquiry_type }}</div>{% endif %}
+            </div>
+            <div class="mb-3">
+                <label for="inquiryOrder" class="form-label fw-semibold">관련 주문 <span class="text-muted fw-normal">(선택)</span></label>
+                <select id="inquiryOrder" name="order_id" class="form-select">
+                    <option value="">주문 연결 안 함</option>
+                    {% for order in orders %}<option value="{{ order.id }}" {{ 'selected' if values.get('order_id') == order.id else '' }}>#{{ order.order_number }} · {{ (order.created_at or '')[:10] }} · {{ "{:,}".format((order.total_amount or 0)|int) }}원</option>{% endfor %}
+                </select>
+                {% if errors.get('order_id') %}<div class="small text-danger mt-1">{{ errors.order_id }}</div>{% endif %}
+            </div>
+            <div class="mb-3">
+                <label for="inquiryTitle" class="form-label fw-semibold">제목 <span class="text-danger">*</span></label>
+                <input id="inquiryTitle" name="title" type="text" class="form-control" maxlength="100" value="{{ values.get('title', '') }}" required>
+                <div class="d-flex justify-content-between mt-1"><small class="text-danger">{{ errors.get('title', '') }}</small><small class="text-muted"><span id="titleCount">{{ values.get('title', '')|length }}</span>/100</small></div>
+            </div>
+            <div class="mb-4">
+                <label for="inquiryContent" class="form-label fw-semibold">문의 내용 <span class="text-danger">*</span></label>
+                <textarea id="inquiryContent" name="content" class="form-control inquiry-text" rows="9" maxlength="5000" required>{{ values.get('content', '') }}</textarea>
+                <div class="d-flex justify-content-between mt-1"><small class="text-danger">{{ errors.get('content', '') }}</small><small class="text-muted"><span id="contentCount">{{ values.get('content', '')|length }}</span>/5,000</small></div>
+            </div>
+            <div class="d-flex flex-wrap justify-content-end gap-2 border-top pt-3">
+                <a href="{{ url_for('inquiries.customer_list') }}" class="btn btn-light">취소</a>
+                <button type="submit" class="btn btn-dark px-4"><i class="bi bi-send me-1" aria-hidden="true"></i>문의 등록</button>
+            </div>
+        </form>
+    </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<style>
+    .inquiry-page { min-height: 65vh; }
+    .inquiry-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+</style>
+<script>
+    for (const [inputId, countId] of [['inquiryTitle', 'titleCount'], ['inquiryContent', 'contentCount']]) {
+        const input = document.getElementById(inputId);
+        const count = document.getElementById(countId);
+        input.addEventListener('input', () => { count.textContent = input.value.length; });
+    }
+</script>
+{% endblock %}

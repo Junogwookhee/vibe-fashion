@@ -90,8 +90,29 @@
 </section>
 
 <section class="admin-card mb-4" aria-labelledby="memberInquiriesHeading">
-    <div class="admin-card-header"><h2 id="memberInquiriesHeading" class="admin-card-title">문의 내역</h2></div>
-    <div class="p-4 text-muted small">문의 기능 준비 중 · 현재 문의 테이블과 관리자 문의 화면이 없습니다.</div>
+    <div class="admin-card-header">
+        <h2 id="memberInquiriesHeading" class="admin-card-title">문의 내역{% if member_inquiry_count is not none %} · {{ member_inquiry_count }}건{% endif %}</h2>
+        {% if member_inquiries_state == 'ready' and member_inquiry_count %}<a href="{{ member_inquiry_list_url }}" class="btn btn-outline-secondary btn-sm">전체 문의</a>{% endif %}
+    </div>
+    {% if member_inquiries_state == 'error' %}
+    <div class="p-4 text-warning small">{{ member_inquiries_error }}</div>
+    {% elif member_inquiry_count == 0 %}
+    <div class="p-4 text-muted small">이 회원이 등록한 문의가 없습니다.</div>
+    {% elif member_inquiries %}
+    <div class="list-group list-group-flush">
+        {% for inquiry in member_inquiries %}
+        <a href="{{ url_for('admin.inquiry_detail', inquiry_id=inquiry.id, member_id=member.id) }}" class="list-group-item list-group-item-action px-4 py-3">
+            <div class="d-flex flex-wrap justify-content-between gap-2">
+                <span class="small fw-semibold text-break">#{{ inquiry.inquiry_number }} · {{ inquiry.title }}</span>
+                <span class="badge {{ 'text-bg-success' if inquiry.status == 'answered' else 'text-bg-warning' }}">{{ inquiry.status_label }}</span>
+            </div>
+            <div class="small text-muted mt-1">{{ inquiry.inquiry_type_label }} · {{ inquiry.created_at_display }}</div>
+        </a>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="p-4 text-muted small">문의 목록을 표시할 수 없습니다.</div>
+    {% endif %}
 </section>
 {% else %}
 <div class="admin-card p-5 text-center text-muted">
