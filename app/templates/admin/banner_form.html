@@ -1,0 +1,65 @@
+{% extends 'admin/base.html' %}
+
+{% block title %}{{ '배너 수정' if is_edit else '배너 등록' }} | VIBE-FASHION 관리자{% endblock %}
+{% block page_title %}{{ '메인 배너 수정' if is_edit else '메인 배너 등록' }}{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-12 col-xl-9">
+        <div class="mb-3">
+            <a href="{{ url_for('admin.banner_list', tab='banners') }}" class="text-muted small text-decoration-none">
+                <i class="bi bi-arrow-left me-1"></i>배너 목록으로 돌아가기
+            </a>
+        </div>
+        <form method="POST" action="{% if is_edit %}{{ url_for('admin.banner_edit', banner_id=banner.get('id')) }}{% else %}{{ url_for('admin.banner_new') }}{% endif %}">
+            <input type="hidden" name="csrf_token" value="{{ admin_csrf_token }}">
+            <div class="admin-card">
+                <div class="admin-card-header"><h2 class="admin-card-title">배너 정보</h2></div>
+                <div class="p-3 p-md-4">
+                    <div class="row g-3">
+                        <div class="col-12 col-md-6">
+                            <label for="banner-name" class="form-label small fw-semibold">관리용 이름 <span class="text-danger">*</span></label>
+                            <input id="banner-name" class="form-control" name="name" value="{{ banner.get('name', '') }}" maxlength="150" required placeholder="예: 봄 시즌 메인 배너">
+                        </div>
+                        <div class="col-12 col-md-6">
+                            <label for="banner-image-url" class="form-label small fw-semibold">이미지 URL <span class="text-danger">*</span></label>
+                            <input id="banner-image-url" class="form-control" type="url" name="image_url" value="{{ banner.get('image_url', '') }}" required placeholder="https://...">
+                        </div>
+                        <div class="col-12">
+                            <label for="banner-image-alt" class="form-label small fw-semibold">이미지 대체 텍스트</label>
+                            <input id="banner-image-alt" class="form-control" name="image_alt" value="{{ banner.get('image_alt', '') }}" maxlength="200" placeholder="이미지 설명">
+                        </div>
+                        <div class="col-12 col-md-6">
+                            <label for="banner-title" class="form-label small fw-semibold">메인 문구</label>
+                            <input id="banner-title" class="form-control" name="title" value="{{ banner.get('title', '') }}" maxlength="200" placeholder="고객에게 표시할 제목">
+                        </div>
+                        <div class="col-12 col-md-6">
+                            <label for="banner-description" class="form-label small fw-semibold">설명 문구</label>
+                            <input id="banner-description" class="form-control" name="description" value="{{ banner.get('description', '') }}" maxlength="300" placeholder="제목 아래에 표시할 설명">
+                        </div>
+                        <div class="col-12 col-md-6">
+                            <label for="banner-button-text" class="form-label small fw-semibold">버튼 문구</label>
+                            <input id="banner-button-text" class="form-control" name="button_text" value="{{ banner.get('button_text', '') }}" maxlength="50" placeholder="예: 컬렉션 보기">
+                        </div>
+                        <div class="col-12 col-md-6">
+                            <label for="banner-link-url" class="form-label small fw-semibold">버튼 연결 주소</label>
+                            <input id="banner-link-url" class="form-control" name="link_url" value="{{ banner.get('link_url', '') }}" placeholder="/products 또는 https://...">
+                            <div class="form-text">버튼 문구와 연결 주소는 함께 입력해야 합니다.</div>
+                        </div>
+                        <div class="col-12 pt-2 border-top">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" role="switch" id="banner-active" name="is_active" value="true" {% if banner.get('is_active') %}checked{% endif %}>
+                                <label class="form-check-label small fw-semibold" for="banner-active">쇼핑몰 메인에 즉시 공개</label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="d-flex justify-content-between align-items-center mb-5">
+                <a href="{{ url_for('admin.banner_list', tab='banners') }}" class="btn btn-outline-secondary">취소</a>
+                <button class="btn btn-coral px-4" type="submit"><i class="bi bi-check-lg me-1"></i>{{ '변경사항 저장' if is_edit else '배너 등록' }}</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

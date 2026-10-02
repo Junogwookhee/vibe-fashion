@@ -1502,3 +1502,438 @@ def inventory_logs():
             'error': '재고 변경 이력을 조회할 수 없습니다. inventory_logs 테이블이 생성되었는지 확인해주세요.',
             'logs': []
         }), 200
+
+
+# ==============================================================================
+# [11] 메인 배너 및 상단 공지 관리 (GET /admin/banners)
+# ==============================================================================
+def is_safe_link_url(url: str) -> bool:
+    """내부 경로(/...) 또는 안전한 HTTPS URL만 허용 (javascript:, data: 등 차단)"""
+    if not url:
+        return True
+    url = url.strip()
+    if url.startswith('/') or url.startswith('#'):
+        return True
+    try:
+        parsed = urlparse(url)
+        return parsed.scheme == 'https' and bool(parsed.netloc)
+    except Exception:
+        return False
+
+
+def swap_sort_order(table_name: str, item_id: str, direction: str):
+    """지정한 테이블 내 항목의 노출 순서(sort_order)를 인접 항목과 안전하게 교환합니다."""
+    admin_client = get_supabase_admin_client()
+    items = admin_client.table(table_name).select('id, sort_order').order('sort_order', desc=False).order('created_at', desc=False).execute().data or []
+    idx = next((i for i, it in enumerate(items) if str(it['id']) == str(item_id)), None)
+    if idx is None:
+        return
+    target_idx = idx - 1 if direction == 'up' else idx + 1
+    if 0 <= target_idx < len(items):
+        curr_item = items[idx]
+        target_item = items[target_idx]
+        curr_order = curr_item.get('sort_order') if curr_item.get('sort_order') is not None else idx
+        target_order = target_item.get('sort_order') if target_item.get('sort_order') is not None else target_idx
+        if curr_order == target_order:
+            curr_order, target_order = idx, target_idx
+
+        admin_client.table(table_name).update({
+            'sort_order': target_order,
+            'updated_at': datetime.now(timezone.utc).isoformat()
+        }).eq('id', curr_item['id']).execute()
+
+        admin_client.table(table_name).update({
+            'sort_order': curr_order,
+            'updated_at': datetime.now(timezone.utc).isoformat()
+        }).eq('id', target_item['id']).execute()
+
+
+@admin_bp.route('/banners', methods=['GET'])
+@admin_required
+def banner_list():
+    """
+    배너 및 공지 관리 메인 화면:
+    - 탭 1: 메인 배너 목록 (정렬, 공개/숨김, 수정, 삭제)
+    - 탭 2: 상단 공지 목록 (정렬, 공개/숨김, 수정, 삭제)
+    - active_tab 쿼리 파라미터로 선택 탭 유지
+    """
+    admin_client = get_supabase_admin_client()
+    active_tab = request.args.get('tab', 'banners').strip().lower()
+    if active_tab not in ('banners', 'announcements'):
+        active_tab = 'banners'
+
+    banners = []
+    announcements = []
+    db_notice = None
+
+    try:
+        b_res = admin_client.table('banners').select('*').order('sort_order', desc=False).order('created_at', desc=True).execute()
+        banners = b_res.data or []
+    except Exception as e:
+        logger.warning(f"[Banners Table Fetch Notice] {e}")
+        db_notice = "Supabase DB에 banners 및 announcements 테이블이 아직 생성되지 않았습니다. 제공된 마이그레이션 SQL을 실행해주세요."
+
+    try:
+        a_res = admin_client.table('announcements').select('*').order('sort_order', desc=False).order('created_at', desc=True).execute()
+        announcements = a_res.data or []
+    except Exception as e:
+        logger.warning(f"[Announcements Table Fetch Notice] {e}")
+        if not db_notice:
+            db_notice = "Supabase DB에 announcements 테이블이 아직 생성되지 않았습니다. 제공된 마이그레이션 SQL을 실행해주세요."
+
+    return render_template(
+        'admin/banners.html',
+        active_menu='banners',
+        active_tab=active_tab,
+        banners=banners,
+        announcements=announcements,
+        db_notice=db_notice
+    )
+
+
+# --- [메인 배너 등록/수정/삭제/순서/토글] ---
+
+@admin_bp.route('/banners/new', methods=['GET', 'POST'])
+@admin_required
+def banner_new():
+    """메인 배너 신규 등록 (기본 숨김 상태로 등록)"""
+    admin_client = get_supabase_admin_client()
+
+    if request.method == 'GET':
+        return render_template(
+            'admin/banner_form.html',
+            active_menu='banners',
+            is_edit=False,
+            banner={}
+        )
+
+    # POST 처리
+    name = request.form.get('name', '').strip()
+    image_url = request.form.get('image_url', '').strip()
+    image_alt = request.form.get('image_alt', '').strip()
+    title = request.form.get('title', '').strip()
+    description = request.form.get('description', '').strip()
+    button_text = request.form.get('button_text', '').strip()
+    link_url = request.form.get('link_url', '').strip()
+    # 새 배너는 기본적으로 숨김 (체크되어 있으면 공개)
+    is_active = request.form.get('is_active') == 'true'
+
+    if not name:
+        flash('관리용 배너 이름은 필수 입력 항목입니다.', 'danger')
+        return render_template('admin/banner_form.html', active_menu='banners', is_edit=False, banner=request.form)
+
+    if not image_url:
+        flash('배너 이미지 URL은 필수 입력 항목입니다.', 'danger')
+        return render_template('admin/banner_form.html', active_menu='banners', is_edit=False, banner=request.form)
+
+    # 이미지 URL 검증
+    parsed_img = urlparse(image_url)
+    if parsed_img.scheme not in ('http', 'https') or not parsed_img.netloc:
+        flash('올바른 이미지 URL(http:// 또는 https://)을 입력해주세요.', 'danger')
+        return render_template('admin/banner_form.html', active_menu='banners', is_edit=False, banner=request.form)
+
+    # 버튼 문구와 연결 주소는 둘 다 있거나 둘 다 없어야 함
+    if (button_text and not link_url) or (link_url and not button_text):
+        flash('버튼 문구와 연결 주소는 함께 입력하거나 둘 다 비워두어야 합니다.', 'danger')
+        return render_template('admin/banner_form.html', active_menu='banners', is_edit=False, banner=request.form)
+
+    if link_url and not is_safe_link_url(link_url):
+        flash('연결 주소는 내부 경로(/...) 또는 안전한 https:// URL만 입력할 수 있습니다.', 'danger')
+        return render_template('admin/banner_form.html', active_menu='banners', is_edit=False, banner=request.form)
+
+    try:
+        # 노출 순서 자동 계산 (현재 등록된 마지막 순서 + 1)
+        cur_banners = admin_client.table('banners').select('sort_order').order('sort_order', desc=True).limit(1).execute().data or []
+        next_order = (cur_banners[0].get('sort_order', 0) + 1) if cur_banners else 1
+
+        payload = {
+            'name': name,
+            'image_url': image_url,
+            'image_alt': image_alt or None,
+            'title': title or None,
+            'description': description or None,
+            'button_text': button_text or None,
+            'link_url': link_url or None,
+            'is_active': is_active,
+            'sort_order': next_order,
+            'created_at': datetime.now(timezone.utc).isoformat(),
+            'updated_at': datetime.now(timezone.utc).isoformat()
+        }
+
+        admin_client.table('banners').insert(payload).execute()
+        flash(f"배너 '{name}'이(가) 등록되었습니다. (상태: {'공개' if is_active else '숨김'})", 'success')
+        return redirect(url_for('admin.banner_list', tab='banners'))
+
+    except Exception as e:
+        logger.error(f"[Banner Create Error] {e}", exc_info=True)
+        flash(f"배너 등록 중 오류가 발생했습니다: {e}", 'danger')
+        return render_template('admin/banner_form.html', active_menu='banners', is_edit=False, banner=request.form)
+
+
+@admin_bp.route('/banners/<banner_id>/edit', methods=['GET', 'POST'])
+@admin_required
+def banner_edit(banner_id):
+    """메인 배너 수정"""
+    admin_client = get_supabase_admin_client()
+
+    try:
+        b_res = admin_client.table('banners').select('*').eq('id', banner_id).execute()
+        if not b_res.data:
+            flash('수정할 배너를 찾을 수 없습니다.', 'warning')
+            return redirect(url_for('admin.banner_list', tab='banners'))
+        banner = b_res.data[0]
+    except Exception as e:
+        logger.error(f"[Banner Fetch Error] {e}")
+        flash('배너 정보를 불러오지 못했습니다.', 'danger')
+        return redirect(url_for('admin.banner_list', tab='banners'))
+
+    if request.method == 'GET':
+        return render_template(
+            'admin/banner_form.html',
+            active_menu='banners',
+            is_edit=True,
+            banner=banner
+        )
+
+    # POST 처리
+    name = request.form.get('name', '').strip()
+    image_url = request.form.get('image_url', '').strip()
+    image_alt = request.form.get('image_alt', '').strip()
+    title = request.form.get('title', '').strip()
+    description = request.form.get('description', '').strip()
+    button_text = request.form.get('button_text', '').strip()
+    link_url = request.form.get('link_url', '').strip()
+    is_active = request.form.get('is_active') == 'true'
+
+    if not name or not image_url:
+        flash('관리용 배너 이름과 배너 이미지 URL은 필수입니다.', 'danger')
+        return render_template('admin/banner_form.html', active_menu='banners', is_edit=True, banner=request.form)
+
+    parsed_img = urlparse(image_url)
+    if parsed_img.scheme not in ('http', 'https') or not parsed_img.netloc:
+        flash('올바른 이미지 URL을 입력해주세요.', 'danger')
+        return render_template('admin/banner_form.html', active_menu='banners', is_edit=True, banner=request.form)
+
+    if (button_text and not link_url) or (link_url and not button_text):
+        flash('버튼 문구와 연결 주소는 함께 입력하거나 둘 다 비워두어야 합니다.', 'danger')
+        return render_template('admin/banner_form.html', active_menu='banners', is_edit=True, banner=request.form)
+
+    if link_url and not is_safe_link_url(link_url):
+        flash('연결 주소는 내부 경로(/...) 또는 안전한 https:// URL만 입력할 수 있습니다.', 'danger')
+        return render_template('admin/banner_form.html', active_menu='banners', is_edit=True, banner=request.form)
+
+    try:
+        update_payload = {
+            'name': name,
+            'image_url': image_url,
+            'image_alt': image_alt or None,
+            'title': title or None,
+            'description': description or None,
+            'button_text': button_text or None,
+            'link_url': link_url or None,
+            'is_active': is_active,
+            'updated_at': datetime.now(timezone.utc).isoformat()
+        }
+        admin_client.table('banners').update(update_payload).eq('id', banner_id).execute()
+        flash(f"배너 '{name}' 정보가 성공적으로 수정되었습니다.", 'success')
+        return redirect(url_for('admin.banner_list', tab='banners'))
+
+    except Exception as e:
+        logger.error(f"[Banner Update Error] {e}", exc_info=True)
+        flash(f"배너 수정 중 오류가 발생했습니다: {e}", 'danger')
+        return render_template('admin/banner_form.html', active_menu='banners', is_edit=True, banner=request.form)
+
+
+@admin_bp.route('/banners/<banner_id>/delete', methods=['POST'])
+@admin_required
+def banner_delete(banner_id):
+    """배너 삭제"""
+    admin_client = get_supabase_admin_client()
+    try:
+        cur = admin_client.table('banners').select('id, name').eq('id', banner_id).execute()
+        name = cur.data[0]['name'] if cur.data else '선택한 배너'
+        admin_client.table('banners').delete().eq('id', banner_id).execute()
+        flash(f"배너 '{name}'이(가) 삭제되었습니다.", 'success')
+    except Exception as e:
+        logger.error(f"[Banner Delete Error] {e}", exc_info=True)
+        flash('배너 삭제 중 오류가 발생했습니다.', 'danger')
+    return redirect(url_for('admin.banner_list', tab='banners'))
+
+
+@admin_bp.route('/banners/<banner_id>/toggle-status', methods=['POST'])
+@admin_required
+def banner_toggle_status(banner_id):
+    """배너 공개 <-> 숨김 상태 토글"""
+    admin_client = get_supabase_admin_client()
+    try:
+        cur = admin_client.table('banners').select('id, name, is_active').eq('id', banner_id).execute()
+        if cur.data:
+            b = cur.data[0]
+            new_status = not b.get('is_active')
+            admin_client.table('banners').update({
+                'is_active': new_status,
+                'updated_at': datetime.now(timezone.utc).isoformat()
+            }).eq('id', banner_id).execute()
+            flash(f"배너 '{b.get('name')}' 상태가 [{'공개' if new_status else '숨김'}]으로 변경되었습니다.", 'success')
+    except Exception as e:
+        logger.error(f"[Banner Toggle Error] {e}", exc_info=True)
+        flash('배너 상태 변경 중 오류가 발생했습니다.', 'danger')
+    return redirect(url_for('admin.banner_list', tab='banners'))
+
+
+@admin_bp.route('/banners/<banner_id>/reorder', methods=['POST'])
+@admin_required
+def banner_reorder(banner_id):
+    """배너 노출 순서 변경 (up / down)"""
+    direction = request.form.get('direction', 'up').strip().lower()
+    if direction not in ('up', 'down'):
+        direction = 'up'
+    try:
+        swap_sort_order('banners', banner_id, direction)
+        flash('배너 노출 순서가 변경되었습니다.', 'success')
+    except Exception as e:
+        logger.error(f"[Banner Reorder Error] {e}", exc_info=True)
+        flash('순서 변경 중 오류가 발생했습니다.', 'danger')
+    return redirect(url_for('admin.banner_list', tab='banners'))
+
+
+# --- [상단 공지 등록/수정/삭제/순서/토글] ---
+
+@admin_bp.route('/announcements/new', methods=['POST'])
+@admin_required
+def announcement_new():
+    """상단 공지 신규 등록"""
+    admin_client = get_supabase_admin_client()
+
+    name = request.form.get('name', '').strip()
+    content = request.form.get('content', '').strip()
+    link_url = request.form.get('link_url', '').strip()
+    is_active = request.form.get('is_active') == 'true'
+
+    if not name:
+        flash('관리용 공지 이름은 필수입니다.', 'danger')
+        return redirect(url_for('admin.banner_list', tab='announcements'))
+
+    if not content:
+        flash('고객에게 표시할 공지 문구는 필수입니다.', 'danger')
+        return redirect(url_for('admin.banner_list', tab='announcements'))
+
+    if len(content) > 100:
+        flash('공지 문구는 최대 100자 이하로 작성해주세요.', 'danger')
+        return redirect(url_for('admin.banner_list', tab='announcements'))
+
+    if link_url and not is_safe_link_url(link_url):
+        flash('연결 주소는 내부 경로(/...) 또는 안전한 https:// URL만 입력 가능합니다.', 'danger')
+        return redirect(url_for('admin.banner_list', tab='announcements'))
+
+    try:
+        cur_ann = admin_client.table('announcements').select('sort_order').order('sort_order', desc=True).limit(1).execute().data or []
+        next_order = (cur_ann[0].get('sort_order', 0) + 1) if cur_ann else 1
+
+        payload = {
+            'name': name,
+            'content': content,
+            'link_url': link_url or None,
+            'is_active': is_active,
+            'sort_order': next_order,
+            'created_at': datetime.now(timezone.utc).isoformat(),
+            'updated_at': datetime.now(timezone.utc).isoformat()
+        }
+        admin_client.table('announcements').insert(payload).execute()
+        flash(f"상단 공지 '{name}'이(가) 등록되었습니다. (상태: {'공개' if is_active else '숨김'})", 'success')
+    except Exception as e:
+        logger.error(f"[Announcement Create Error] {e}", exc_info=True)
+        flash(f"공지 등록 중 오류가 발생했습니다: {e}", 'danger')
+
+    return redirect(url_for('admin.banner_list', tab='announcements'))
+
+@admin_bp.route('/announcements/<announcement_id>/edit', methods=['POST'])
+@admin_required
+def announcement_edit(announcement_id):
+    """상단 공지 수정"""
+    admin_client = get_supabase_admin_client()
+
+    name = request.form.get('name', '').strip()
+    content = request.form.get('content', '').strip()
+    link_url = request.form.get('link_url', '').strip()
+    is_active = request.form.get('is_active') == 'true'
+
+    if not name or not content:
+        flash('공지 이름과 고객 표시 문구는 필수 입력 항목입니다.', 'danger')
+        return redirect(url_for('admin.banner_list', tab='announcements'))
+    if len(content) > 100:
+        flash('공지 문구는 최대 100자 이하로 작성해주세요.', 'danger')
+        return redirect(url_for('admin.banner_list', tab='announcements'))
+
+    if link_url and not is_safe_link_url(link_url):
+        flash('연결 주소는 내부 경로(/...) 또는 안전한 https:// URL만 입력 가능합니다.', 'danger')
+        return redirect(url_for('admin.banner_list', tab='announcements'))
+
+    try:
+        update_payload = {
+            'name': name,
+            'content': content,
+            'link_url': link_url or None,
+            'is_active': is_active,
+            'updated_at': datetime.now(timezone.utc).isoformat()
+        }
+        admin_client.table('announcements').update(update_payload).eq('id', announcement_id).execute()
+        flash(f"상단 공지 '{name}'이(가) 수정되었습니다.", 'success')
+    except Exception as e:
+        logger.error(f"[Announcement Update Error] {e}", exc_info=True)
+        flash(f"공지 수정 중 오류가 발생했습니다: {e}", 'danger')
+
+    return redirect(url_for('admin.banner_list', tab='announcements'))
+
+@admin_bp.route('/announcements/<announcement_id>/delete', methods=['POST'])
+@admin_required
+def announcement_delete(announcement_id):
+    """상단 공지 삭제"""
+    admin_client = get_supabase_admin_client()
+    try:
+        cur = admin_client.table('announcements').select('id, name').eq('id', announcement_id).execute()
+        name = cur.data[0]['name'] if cur.data else '선택한 공지'
+        admin_client.table('announcements').delete().eq('id', announcement_id).execute()
+        flash(f"상단 공지 '{name}'이(가) 삭제되었습니다.", 'success')
+    except Exception as e:
+        logger.error(f"[Announcement Delete Error] {e}", exc_info=True)
+        flash('공지 삭제 중 오류가 발생했습니다.', 'danger')
+    return redirect(url_for('admin.banner_list', tab='announcements'))
+
+
+@admin_bp.route('/announcements/<announcement_id>/toggle-status', methods=['POST'])
+@admin_required
+def announcement_toggle_status(announcement_id):
+    """상단 공지 공개 <-> 숨김 상태 토글"""
+    admin_client = get_supabase_admin_client()
+    try:
+        cur = admin_client.table('announcements').select('id, name, is_active').eq('id', announcement_id).execute()
+        if cur.data:
+            a = cur.data[0]
+            new_status = not a.get('is_active')
+            admin_client.table('announcements').update({
+                'is_active': new_status,
+                'updated_at': datetime.now(timezone.utc).isoformat()
+            }).eq('id', announcement_id).execute()
+            flash(f"공지 '{a.get('name')}' 상태가 [{'공개' if new_status else '숨김'}]으로 변경되었습니다.", 'success')
+    except Exception as e:
+        logger.error(f"[Announcement Toggle Error] {e}", exc_info=True)
+        flash('공지 상태 변경 중 오류가 발생했습니다.', 'danger')
+    return redirect(url_for('admin.banner_list', tab='announcements'))
+
+
+@admin_bp.route('/announcements/<announcement_id>/reorder', methods=['POST'])
+@admin_required
+def announcement_reorder(announcement_id):
+    """상단 공지 우선순위 순서 변경 (up / down)"""
+    direction = request.form.get('direction', 'up').strip().lower()
+    if direction not in ('up', 'down'):
+        direction = 'up'
+    try:
+        swap_sort_order('announcements', announcement_id, direction)
+        flash('공지 우선순위 순서가 변경되었습니다.', 'success')
+    except Exception as e:
+        logger.error(f"[Announcement Reorder Error] {e}", exc_info=True)
+        flash('순서 변경 중 오류가 발생했습니다.', 'danger')
+    return redirect(url_for('admin.banner_list', tab='announcements'))
+
