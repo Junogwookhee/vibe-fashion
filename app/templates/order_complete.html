@@ -30,21 +30,43 @@
                     <!-- 주문 상품 정보 -->
                     <div class="text-start mb-4">
                         <h6 class="fw-bold text-dark mb-3 border-bottom pb-2">주문 상품 내역</h6>
-                        <div class="d-flex gap-3 align-items-center p-3 rounded-3 bg-surface border border-light-subtle">
-                            {% if order.product_thumbnail %}
-                                <img src="{{ order.product_thumbnail }}" class="rounded-3 object-fit-cover" style="width: 70px; height: 85px;" alt="상품">
-                            {% endif %}
-                            <div class="flex-grow-1">
-                                <h6 class="fw-bold mb-1 text-dark">{{ order.product_name }}</h6>
-                                {% if order.option_info %}
-                                    <div class="text-muted small">선택 옵션: {{ order.option_info }}</div>
+                        {% if order.item_list %}
+                            <div class="d-flex flex-column gap-2">
+                                {% for it in order.item_list %}
+                                <div class="d-flex gap-3 align-items-center p-3 rounded-3 bg-surface border border-light-subtle">
+                                    {% if it.thumbnail_url %}
+                                        <img src="{{ it.thumbnail_url }}" class="rounded-3 object-fit-cover flex-shrink-0" style="width: 65px; height: 80px;" alt="{{ it.product_name }}">
+                                    {% endif %}
+                                    <div class="flex-grow-1 min-w-0">
+                                        <h6 class="fw-bold mb-1 text-dark text-truncate">{{ it.product_name }}</h6>
+                                        {% if it.option_info %}
+                                            <div class="text-muted very-small mb-1"><span class="badge bg-light text-dark border">옵션: {{ it.option_info }}</span></div>
+                                        {% endif %}
+                                        <div class="text-muted small">수량: <strong>{{ it.quantity }}개</strong></div>
+                                    </div>
+                                    <div class="text-end flex-shrink-0 ps-2">
+                                        <div class="fs-6 fw-bold text-coral">{{ it.formatted_subtotal }}</div>
+                                    </div>
+                                </div>
+                                {% endfor %}
+                            </div>
+                        {% else %}
+                            <div class="d-flex gap-3 align-items-center p-3 rounded-3 bg-surface border border-light-subtle">
+                                {% if order.product_thumbnail %}
+                                    <img src="{{ order.product_thumbnail }}" class="rounded-3 object-fit-cover" style="width: 70px; height: 85px;" alt="상품">
                                 {% endif %}
-                                <div class="text-muted small">수량: {{ order.quantity }}개</div>
+                                <div class="flex-grow-1">
+                                    <h6 class="fw-bold mb-1 text-dark">{{ order.product_name }}</h6>
+                                    {% if order.option_info %}
+                                        <div class="text-muted small">선택 옵션: {{ order.option_info }}</div>
+                                    {% endif %}
+                                    <div class="text-muted small">수량: {{ order.quantity }}개</div>
+                                </div>
+                                <div class="text-end">
+                                    <div class="fs-5 fw-bold text-coral">{{ order.formatted_total }}</div>
+                                </div>
                             </div>
-                            <div class="text-end">
-                                <div class="fs-5 fw-bold text-coral">{{ order.formatted_total }}</div>
-                            </div>
-                        </div>
+                        {% endif %}
                     </div>
 
                     <!-- 배송지 정보 요약 -->
@@ -77,6 +99,24 @@
                             </tbody>
                         </table>
                     </div>
+
+                    <!-- 결제 금액 내역 -->
+                    {% if order.formatted_subtotal %}
+                    <div class="text-start mb-4 p-3 rounded-3 bg-surface border border-light-subtle">
+                        <div class="d-flex justify-content-between small text-muted mb-2">
+                            <span>총 상품 금액</span>
+                            <span class="fw-semibold text-dark">{{ order.formatted_subtotal }}</span>
+                        </div>
+                        <div class="d-flex justify-content-between small text-muted mb-2">
+                            <span>배송비</span>
+                            <span class="fw-semibold text-dark">{{ order.formatted_shipping_fee }}</span>
+                        </div>
+                        <div class="d-flex justify-content-between fs-6 fw-bold text-dark pt-2 border-top">
+                            <span>최종 결제 금액</span>
+                            <span class="text-coral">{{ order.formatted_total }}</span>
+                        </div>
+                    </div>
+                    {% endif %}
 
                     <!-- 이동 버튼 -->
                     <div class="d-flex gap-3 justify-content-center pt-3 border-top">

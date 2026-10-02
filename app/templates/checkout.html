@@ -1,6 +1,6 @@
 {% extends 'base.html' %}
 
-{% block title %}주문 / 결제 | VIBE-FASHION{% endblock %}
+{% block title %}주문서 작성 및 결제 | VIBE-FASHION{% endblock %}
 
 {% block content %}
 <!-- 브레드크럼 -->
@@ -8,119 +8,165 @@
     <div class="container">
         <ol class="breadcrumb mb-0 small">
             <li class="breadcrumb-item"><a href="{{ url_for('main.index') }}" class="text-decoration-none text-muted">HOME</a></li>
-            <li class="breadcrumb-item"><a href="{{ url_for('main.index') }}#products" class="text-decoration-none text-muted">COLLECTION</a></li>
-            <li class="breadcrumb-item active text-dark fw-bold" aria-current="page">주문 / 결제</li>
+            <li class="breadcrumb-item"><a href="{{ url_for('main.cart_view') }}" class="text-decoration-none text-muted">장바구니</a></li>
+            <li class="breadcrumb-item active text-dark fw-bold" aria-current="page">주문서 작성 및 결제</li>
         </ol>
     </div>
 </nav>
 
 <section class="py-5 bg-surface" style="min-height: 85vh;">
     <div class="container py-2">
+        <!-- 플래시 메시지 알림 -->
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ category if category != 'error' else 'danger' }} alert-dismissible fade show mb-4 rounded-4 shadow-sm" role="alert">
+                        <i class="bi bi-info-circle-fill me-2"></i>{{ message }}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                    </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
         <!-- 상단 헤더 -->
         <div class="text-center mb-5">
-            <span class="badge bg-danger rounded-pill px-3 py-1 small fw-bold mb-2">SECURE CHECKOUT</span>
-            <h2 class="display-6 fw-bold text-dark">주문 및 안전 결제</h2>
-            <p class="text-muted small">주문자 및 배송지 정보를 입력하고 결제 방식을 선택해주세요.</p>
+            <span class="badge bg-danger rounded-pill px-3 py-1 small fw-bold mb-2">SECURE ORDER & CHECKOUT</span>
+            <h2 class="display-6 fw-bold text-dark">주문서 작성 및 결제</h2>
+            <p class="text-muted small">주문 상품과 배송지 정보를 확인하고 결제를 진행해주세요.</p>
         </div>
 
-        <form action="{{ url_for('main.process_checkout') }}" method="POST" id="checkoutForm">
-            <!-- 숨은 필드들 -->
-            <input type="hidden" name="product_id" value="{{ product.id }}">
-            <input type="hidden" name="product_name" value="{{ product.name }}">
-            <input type="hidden" name="option_info" value="{{ selected_option }}">
-            <input type="hidden" name="quantity" value="{{ qty }}">
-            <input type="hidden" name="unit_price" value="{{ unit_price }}">
-            <input type="hidden" name="total_amount" value="{{ total_price }}">
-
+        <form action="{{ url_for('main.checkout') }}" method="POST" id="checkoutForm" novalidate>
             <div class="row g-4 g-lg-5">
-                <!-- 좌측: 주문 정보 입력 (배송지 / 결제수단) -->
+                <!-- 좌측: 주문 상품 목록 및 배송지 정보 입력 -->
                 <div class="col-lg-7">
-                    <!-- 1. 주문 상품 요약 카드 -->
-                    <div class="card border-0 rounded-4 shadow-sm p-4 bg-white mb-4">
-                        <h5 class="fw-bold text-dark mb-3 d-flex align-items-center gap-2">
-                            <i class="bi bi-bag-check-fill text-coral"></i>
-                            <span>주문 상품 정보 (1건)</span>
-                        </h5>
-                        <div class="d-flex gap-3 align-items-center p-3 rounded-3 bg-surface border border-light-subtle">
-                            <img src="{{ product.thumbnail_url }}" alt="{{ product.name }}" class="rounded-3 object-fit-cover shadow-2xs" style="width: 80px; height: 100px;">
-                            <div class="flex-grow-1">
-                                <span class="badge bg-dark rounded-pill very-small px-2 py-1 mb-1">VIBE COLLECTION</span>
-                                <h6 class="fw-bold mb-1 text-dark">{{ product.name }}</h6>
-                                {% if selected_option %}
-                                    <div class="text-muted small mb-1">선택 옵션: <strong>{{ selected_option }}</strong></div>
-                                {% endif %}
-                                <div class="text-muted small">수량: <strong>{{ qty }}개</strong></div>
+                    <!-- 1. 주문 상품 목록 카드 (수정 불가 읽기 전용) -->
+                    <div class="card border-0 rounded-4 shadow-sm p-4 bg-white mb-4 border border-light-subtle">
+                        <div class="d-flex justify-content-between align-items-center mb-3 pb-2 border-bottom">
+                            <h5 class="fw-bold text-dark mb-0 d-flex align-items-center gap-2">
+                                <i class="bi bi-bag-check-fill text-coral"></i>
+                                <span>주문 상품 (총 {{ total_items_count }}건)</span>
+                            </h5>
+                            <a href="{{ url_for('main.cart_view') }}" class="btn btn-outline-secondary btn-sm rounded-pill px-3 py-1 very-small">
+                                <i class="bi bi-pencil-square me-1"></i>장바구니 수정
+                            </a>
+                        </div>
+                        <div class="text-muted very-small mb-3">
+                            <i class="bi bi-shield-lock-fill text-muted me-1"></i>주문서에서는 상품 및 수량 수정이 불가합니다. 변경이 필요하시면 장바구니 페이지를 이용해주세요.
+                        </div>
+
+                        <div class="d-flex flex-column gap-3">
+                            {% for item in items %}
+                            <div class="d-flex gap-3 align-items-center p-3 rounded-3 bg-surface border border-light-subtle">
+                                <img src="{{ item.thumbnail_url }}" alt="{{ item.product_name }}" class="rounded-3 object-fit-cover shadow-2xs flex-shrink-0" style="width: 72px; height: 90px;">
+                                <div class="flex-grow-1 min-w-0">
+                                    <h6 class="fw-bold mb-1 text-dark text-truncate">{{ item.product_name }}</h6>
+                                    {% if item.option_info %}
+                                        <div class="text-muted small mb-1">
+                                            <span class="badge bg-light text-dark border">옵션: {{ item.option_info }}</span>
+                                        </div>
+                                    {% endif %}
+                                    <div class="d-flex align-items-center gap-2">
+                                        <span class="badge bg-dark-subtle text-dark rounded-pill px-2 py-1 very-small fw-semibold">
+                                            수량 {{ item.quantity }}개 (수정 불가)
+                                        </span>
+                                        <span class="very-small text-muted">개당 {{ item.formatted_unit_price }}</span>
+                                    </div>
+                                </div>
+                                <div class="text-end flex-shrink-0 ps-2">
+                                    <div class="fs-6 fw-bold text-coral">{{ item.formatted_subtotal }}</div>
+                                </div>
                             </div>
-                            <div class="text-end">
-                                <div class="fs-5 fw-bold text-coral">{{ formatted_subtotal }}</div>
-                                <div class="very-small text-muted">개당 {{ formatted_unit_price }}</div>
-                            </div>
+                            {% endfor %}
                         </div>
                     </div>
 
-                    <!-- 2. 주문자 및 배송지 정보 입력 카드 -->
-                    <div class="card border-0 rounded-4 shadow-sm p-4 bg-white mb-4">
-                        <h5 class="fw-bold text-dark mb-3 d-flex align-items-center gap-2">
-                            <i class="bi bi-truck text-coral"></i>
-                            <span>배송지 정보 입력</span>
-                        </h5>
+                    <!-- 2. 배송지 정보 입력 카드 -->
+                    <div class="card border-0 rounded-4 shadow-sm p-4 bg-white mb-4 border border-light-subtle">
+                        <div class="d-flex flex-wrap justify-content-between align-items-center mb-3 pb-2 border-bottom gap-2">
+                            <h5 class="fw-bold text-dark mb-0 d-flex align-items-center gap-2">
+                                <i class="bi bi-truck text-coral"></i>
+                                <span>배송지 정보 입력</span>
+                            </h5>
+                            <button type="button" class="btn btn-outline-dark btn-sm rounded-pill px-3 py-1 very-small fw-semibold shadow-2xs" id="btnLoadDefaultAddress"
+                                    data-name="{{ profile.full_name }}"
+                                    data-phone="{{ profile.phone }}"
+                                    data-address="{{ profile.shipping_address }}"
+                                    data-detail="{{ profile.shipping_detail_address }}"
+                                    data-postal="{{ profile.postal_code }}">
+                                <i class="bi bi-person-lines-fill me-1 text-coral"></i>마이페이지에 저장된 기본 배송지 불러오기
+                            </button>
+                        </div>
+
+                        <!-- 알림 배너 (배송지 불러오기 성공 알림) -->
+                        <div id="addressLoadAlert" class="alert alert-success alert-dismissible fade d-none py-2 px-3 small mb-3 rounded-3" role="alert">
+                            <i class="bi bi-check-circle-fill me-1"></i><span id="addressLoadAlertText">기본 배송지를 성공적으로 불러왔습니다.</span>
+                            <button type="button" class="btn-close py-2" data-bs-dismiss="alert" aria-label="Close"></button>
+                        </div>
 
                         <div class="row g-3">
                             <!-- 수령인 이름 -->
                             <div class="col-md-6">
-                                <label for="recipientName" class="form-label fw-bold small text-dark">수령인 성명 *</label>
-                                <input type="text" class="form-control bg-light border-light-subtle py-2 rounded-3" id="recipientName" name="recipient_name" value="{{ user.full_name if user else '' }}" placeholder="받는 분 이름" required>
+                                <label for="recipientName" class="form-label fw-bold small text-dark">수령인 성명 <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control bg-light border-light-subtle py-2 rounded-3" id="recipientName" name="recipient_name" value="{{ profile.full_name }}" placeholder="받는 분 이름을 입력해주세요" required>
+                                <div class="invalid-feedback very-small">수령인 성명을 입력해주세요.</div>
                             </div>
 
-                            <!-- 수령인 연락처 -->
+                            <!-- 휴대폰 번호 (010-0000-0000 패턴 검증) -->
                             <div class="col-md-6">
-                                <label for="recipientPhone" class="form-label fw-bold small text-dark">휴대폰 번호 *</label>
-                                <input type="tel" class="form-control bg-light border-light-subtle py-2 rounded-3" id="recipientPhone" name="recipient_phone" value="010-1234-5678" placeholder="010-1234-5678" required>
+                                <label for="recipientPhone" class="form-label fw-bold small text-dark">휴대폰 번호 <span class="text-danger">*</span></label>
+                                <input type="tel" class="form-control bg-light border-light-subtle py-2 rounded-3" id="recipientPhone" name="recipient_phone" value="{{ profile.phone }}" placeholder="010-0000-0000" pattern="^010-\d{4}-\d{4}$" required>
+                                <div class="form-text very-small text-muted">010-0000-0000 형식 (숫자만 입력 시 자동 포맷)</div>
+                                <div class="invalid-feedback very-small">휴대폰 번호는 010-0000-0000 패턴으로 입력해주세요.</div>
                             </div>
 
-                            <!-- 우편번호 및 주소검색 -->
+                            <!-- 우편번호 -->
                             <div class="col-12">
-                                <label for="postalCode" class="form-label fw-bold small text-dark">우편번호 *</label>
-                                <div class="input-group">
-                                    <input type="text" class="form-control bg-light border-light-subtle py-2 rounded-start-3" id="postalCode" name="postal_code" value="06000" placeholder="우편번호" required style="max-width: 140px;">
-                                    <button class="btn btn-outline-dark rounded-end-3 px-3" type="button" onclick="alert('주소 검색 팝업 (테스트 기본값 자동 입력)')">
-                                        <i class="bi bi-search me-1"></i>주소 검색
-                                    </button>
-                                </div>
+                                <label for="postalCode" class="form-label fw-bold small text-dark">우편번호</label>
+                                <input type="text" class="form-control bg-light border-light-subtle py-2 rounded-3" id="postalCode" name="postal_code" value="{{ profile.postal_code or '06000' }}" placeholder="우편번호" style="max-width: 140px;">
                             </div>
 
-                            <!-- 기본 주소 -->
+                            <!-- 기본 주소 (최소 5자 이상 검증) -->
                             <div class="col-12">
-                                <label for="shippingAddress" class="form-label fw-bold small text-dark">기본 주소 *</label>
-                                <input type="text" class="form-control bg-light border-light-subtle py-2 rounded-3" id="shippingAddress" name="shipping_address" value="서울특별시 강남구 테헤란로 152 (강남파이낸스센터)" placeholder="기본 주소" required>
+                                <label for="shippingAddress" class="form-label fw-bold small text-dark">배송 주소 <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control bg-light border-light-subtle py-2 rounded-3" id="shippingAddress" name="shipping_address" value="{{ profile.shipping_address }}" minlength="5" placeholder="기본 도로명 또는 지번 주소 (최소 5자 이상)" required>
+                                <div class="form-text very-small text-muted">최소 5자 이상의 기본 도로명/지번 주소를 입력해주세요.</div>
+                                <div class="invalid-feedback very-small">배송 주소를 최소 5자 이상 입력해주세요.</div>
                             </div>
 
-                            <!-- 상세 주소 -->
+                            <!-- 상세 주소 (선택) -->
                             <div class="col-12">
                                 <label for="shippingDetailAddress" class="form-label fw-bold small text-dark">상세 주소 (선택)</label>
-                                <input type="text" class="form-control bg-light border-light-subtle py-2 rounded-3" id="shippingDetailAddress" name="shipping_detail_address" value="12층 VIBE FASHION" placeholder="상세 주소 및 동·호수">
+                                <input type="text" class="form-control bg-light border-light-subtle py-2 rounded-3" id="shippingDetailAddress" name="shipping_detail_address" value="{{ profile.shipping_detail_address }}" placeholder="상세 주소 및 동·호수 입력 (선택)">
                             </div>
 
-                            <!-- 배송 메모 -->
+                            <!-- 배송 메모 (선택) -->
                             <div class="col-12">
-                                <label for="deliveryMemo" class="form-label fw-bold small text-dark">배송 요청사항</label>
-                                <select class="form-select bg-light border-light-subtle py-2 rounded-3" id="deliveryMemo" name="delivery_memo">
+                                <label for="deliveryMemo" class="form-label fw-bold small text-dark">배송 요청사항 (선택)</label>
+                                <select class="form-select bg-light border-light-subtle py-2 rounded-3 mb-2" id="deliveryMemoSelect">
+                                    <option value="" selected>배송 요청사항을 선택하세요 (선택)</option>
                                     <option value="부재 시 문 앞에 놓아주세요.">부재 시 문 앞에 놓아주세요.</option>
                                     <option value="배송 전 미리 연락 바랍니다.">배송 전 미리 연락 바랍니다.</option>
                                     <option value="경비실에 맡겨주세요.">경비실에 맡겨주세요.</option>
                                     <option value="택배함에 보관해주세요.">택배함에 보관해주세요.</option>
                                     <option value="직접 수령하겠습니다.">직접 수령하겠습니다.</option>
+                                    <option value="__custom__">직접 입력하기</option>
                                 </select>
+                                <input type="text" class="form-control bg-light border-light-subtle py-2 rounded-3" id="deliveryMemo" name="delivery_memo" placeholder="요청사항을 직접 입력하거나 위 드롭다운에서 선택하세요">
                             </div>
                         </div>
                     </div>
 
-                    <!-- 3. 결제 수단 선택 카드 -->
-                    <div class="card border-0 rounded-4 shadow-sm p-4 bg-white">
+                    <!-- 3. 결제 수단 선택 카드 (더미 결제 안내) -->
+                    <div class="card border-0 rounded-4 shadow-sm p-4 bg-white border border-light-subtle">
                         <h5 class="fw-bold text-dark mb-3 d-flex align-items-center gap-2">
                             <i class="bi bi-credit-card-2-front text-coral"></i>
-                            <span>결제 수단 선택</span>
+                            <span>결제 수단 선택 (더미 결제 지원)</span>
                         </h5>
+
+                        <div class="p-3 mb-3 rounded-3 bg-light border border-light-subtle very-small text-muted d-flex align-items-center gap-2">
+                            <i class="bi bi-info-circle-fill text-primary fs-6 flex-shrink-0"></i>
+                            <div>본 시스템은 <strong>테스트 더미 결제</strong>를 지원합니다. 실제 카드 결제창 없이 <strong>[결제하기]</strong>를 클릭하시면 즉시 안전하게 주문 완료 처리됩니다.</div>
+                        </div>
 
                         <div class="row g-3">
                             <div class="col-6 col-sm-4">
@@ -169,32 +215,38 @@
                     </div>
                 </div>
 
-                <!-- 우측: 최종 결제 금액 요약 및 주문하기 버튼 -->
+                <!-- 우측: 최종 결제 금액 요약 및 결제하기 버튼 -->
                 <div class="col-lg-5">
                     <div class="order-summary-sticky">
                         <div class="card border-0 rounded-4 shadow-lg p-4 bg-white border border-light-subtle">
-                            <h5 class="fw-bold text-dark mb-4 pb-2 border-bottom">최종 결제 금액</h5>
+                            <h5 class="fw-bold text-dark mb-4 pb-2 border-bottom d-flex align-items-center gap-2">
+                                <i class="bi bi-receipt text-coral"></i>
+                                <span>결제 금액 요약</span>
+                            </h5>
 
                             <div class="d-flex justify-content-between mb-3 text-muted small">
                                 <span>총 상품 금액</span>
-                                <span class="fw-bold text-dark">{{ formatted_subtotal }}</span>
+                                <span class="fw-bold text-dark fs-6">{{ formatted_subtotal }}</span>
                             </div>
 
                             <div class="d-flex justify-content-between mb-3 text-muted small">
                                 <span>배송비</span>
-                                <span class="text-success fw-bold">무료 배송 (0원)</span>
+                                {% if shipping_fee == 0 %}
+                                    <span class="text-success fw-bold"><i class="bi bi-check-circle me-1"></i>무료 배송 (0원)</span>
+                                {% else %}
+                                    <span class="fw-bold text-dark">{{ formatted_shipping_fee }}</span>
+                                {% endif %}
                             </div>
 
-                            {% if product.discount_percent %}
-                            <div class="d-flex justify-content-between mb-3 text-muted small">
-                                <span>시즌 특별 할인 ({{ product.discount_percent }}%)</span>
-                                <span class="text-danger fw-bold">- 적용 완료</span>
+                            {% if shipping_fee > 0 %}
+                            <div class="p-2 mb-3 rounded-3 bg-light border border-light-subtle very-small text-muted">
+                                <i class="bi bi-info-circle me-1"></i>50,000원 이상 구매 시 <strong>무료배송</strong> 혜택이 적용됩니다.
                             </div>
                             {% endif %}
 
-                            <div class="d-flex justify-content-between mb-4 pt-3 border-top border-2">
-                                <span class="fs-5 fw-bold text-dark">총 결제 예정 금액</span>
-                                <span class="fs-3 fw-bold text-coral">{{ formatted_total }}</span>
+                            <div class="d-flex justify-content-between align-items-baseline mb-4 pt-3 border-top border-2">
+                                <span class="fs-5 fw-bold text-dark">최종 결제 금액</span>
+                                <span class="fs-2 fw-bold text-coral">{{ formatted_total }}</span>
                             </div>
 
                             <!-- 약관 동의 -->
@@ -213,10 +265,10 @@
                                 </div>
                             </div>
 
-                            <!-- 결제 진행 버튼 -->
+                            <!-- 결제 진행 버튼 (더미 결제 → 클릭 즉시 중복 클릭 방지 비활성화) -->
                             <button type="submit" class="btn btn-danger w-100 py-3 rounded-pill fw-bold fs-5 shadow-lg d-flex align-items-center justify-content-center gap-2" id="submitOrderBtn">
                                 <i class="bi bi-lock-fill"></i>
-                                <span>{{ formatted_total }} 결제하기</span>
+                                <span id="submitBtnText">{{ formatted_total }} 결제하기</span>
                             </button>
 
                             <!-- 안전 결제 안내 -->
@@ -232,7 +284,7 @@
     </div>
 </section>
 
-<!-- 결제수단 선택 인터랙션 스타일 -->
+<!-- 스타일 -->
 <style>
     .order-summary-sticky {
         position: sticky;
@@ -258,8 +310,109 @@
     }
 </style>
 
+<!-- 인터랙션 스크립트 -->
 <script>
-    // 결제 수단 라디오 카드 선택 효과
+document.addEventListener('DOMContentLoaded', function() {
+    const checkoutForm = document.getElementById('checkoutForm');
+    const submitBtn = document.getElementById('submitOrderBtn');
+    const submitBtnText = document.getElementById('submitBtnText');
+    const recipientPhone = document.getElementById('recipientPhone');
+    const shippingAddress = document.getElementById('shippingAddress');
+    const btnLoadAddress = document.getElementById('btnLoadDefaultAddress');
+    const deliveryMemoSelect = document.getElementById('deliveryMemoSelect');
+    const deliveryMemoInput = document.getElementById('deliveryMemo');
+
+    // 1. 휴대폰 번호 자동 하이픈 (010-0000-0000) 포맷팅
+    if (recipientPhone) {
+        recipientPhone.addEventListener('input', function(e) {
+            let val = e.target.value.replace(/[^0-9]/g, '');
+            if (val.length > 11) val = val.slice(0, 11);
+
+            if (val.length >= 7) {
+                e.target.value = val.replace(/^(\d{3})(\d{4})(\d{0,4})$/, '$1-$2-$3');
+            } else if (val.length >= 4) {
+                e.target.value = val.replace(/^(\d{3})(\d{0,4})$/, '$1-$2');
+            } else {
+                e.target.value = val;
+            }
+        });
+    }
+
+    // 2. 마이페이지에 저장된 기본 배송지 불러오기 버튼
+    if (btnLoadAddress) {
+        btnLoadAddress.addEventListener('click', async function() {
+            let name = btnLoadAddress.getAttribute('data-name') || '';
+            let phone = btnLoadAddress.getAttribute('data-phone') || '';
+            let address = btnLoadAddress.getAttribute('data-address') || '';
+            let detail = btnLoadAddress.getAttribute('data-detail') || '';
+            let postal = btnLoadAddress.getAttribute('data-postal') || '';
+
+            // 만약 data 속성에 주소가 비어있으면 API 호출로 재시도
+            if (!address) {
+                try {
+                    btnLoadAddress.disabled = true;
+                    btnLoadAddress.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>불러오는 중...';
+                    const res = await fetch('/api/profile/default-address');
+                    if (res.ok) {
+                        const data = await res.json();
+                        if (data.success) {
+                            name = data.recipient_name || name;
+                            phone = data.recipient_phone || phone;
+                            address = data.shipping_address || address;
+                            detail = data.shipping_detail_address || detail;
+                            postal = data.postal_code || postal;
+                        }
+                    }
+                } catch (err) {
+                    console.error('기본 배송지 조회 실패:', err);
+                } finally {
+                    btnLoadAddress.disabled = false;
+                    btnLoadAddress.innerHTML = '<i class="bi bi-person-lines-fill me-1 text-coral"></i>마이페이지에 저장된 기본 배송지 불러오기';
+                }
+            }
+
+            // 필드에 주입
+            if (name) document.getElementById('recipientName').value = name;
+            if (phone) {
+                // 전화번호 포맷 정제
+                let p = phone.replace(/[^0-9]/g, '');
+                if (p.length === 11) {
+                    p = p.replace(/^(\d{3})(\d{4})(\d{4})$/, '$1-$2-$3');
+                }
+                document.getElementById('recipientPhone').value = p;
+            }
+            if (address) document.getElementById('shippingAddress').value = address;
+            if (detail) document.getElementById('shippingDetailAddress').value = detail;
+            if (postal) document.getElementById('postalCode').value = postal;
+
+            // 알림 표시
+            const alertBox = document.getElementById('addressLoadAlert');
+            const alertText = document.getElementById('addressLoadAlertText');
+            if (alertBox && alertText) {
+                if (address) {
+                    alertBox.className = 'alert alert-success alert-dismissible fade show py-2 px-3 small mb-3 rounded-3';
+                    alertText.textContent = '마이페이지에 저장된 기본 배송지 정보를 불러왔습니다.';
+                } else {
+                    alertBox.className = 'alert alert-warning alert-dismissible fade show py-2 px-3 small mb-3 rounded-3';
+                    alertText.textContent = '마이페이지에 등록된 기본 배송지가 없습니다. 직접 입력해주세요.';
+                }
+            }
+        });
+    }
+
+    // 3. 배송 메모 셀렉트 박스 연동
+    if (deliveryMemoSelect && deliveryMemoInput) {
+        deliveryMemoSelect.addEventListener('change', function() {
+            if (this.value === '__custom__') {
+                deliveryMemoInput.value = '';
+                deliveryMemoInput.focus();
+            } else if (this.value) {
+                deliveryMemoInput.value = this.value;
+            }
+        });
+    }
+
+    // 4. 결제 수단 라디오 카드 선택 효과
     document.querySelectorAll('.payment-method-card').forEach(card => {
         card.addEventListener('click', function() {
             document.querySelectorAll('.payment-method-card').forEach(c => c.classList.remove('active'));
@@ -269,11 +422,50 @@
         });
     });
 
-    // 폼 제출 시 버튼 로딩 스피너 전환
-    document.getElementById('checkoutForm').addEventListener('submit', function() {
-        const btn = document.getElementById('submitOrderBtn');
-        btn.disabled = true;
-        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span> 결제 처리 중입니다...';
-    });
+    // 5. 폼 제출 시 유효성 검사 및 중복 클릭 방지 (클릭 즉시 버튼 비활성화)
+    if (checkoutForm && submitBtn) {
+        checkoutForm.addEventListener('submit', function(e) {
+            // HTML5 유효성 검증 체크
+            if (!checkoutForm.checkValidity()) {
+                e.preventDefault();
+                e.stopPropagation();
+                checkoutForm.classList.add('was-validated');
+
+                // 첫 번째 유효하지 않은 필드로 포커스 이동
+                const firstInvalid = checkoutForm.querySelector(':invalid');
+                if (firstInvalid) {
+                    firstInvalid.focus();
+                }
+                return false;
+            }
+
+            // 추가 패턴/길이 검증
+            const phoneVal = (recipientPhone.value || '').trim();
+            const phoneRegex = /^010-\d{4}-\d{4}$/;
+            if (!phoneRegex.test(phoneVal)) {
+                e.preventDefault();
+                alert('휴대폰 번호는 010-0000-0000 형식으로 올바르게 입력해주세요.');
+                recipientPhone.focus();
+                return false;
+            }
+
+            const addrVal = (shippingAddress.value || '').trim();
+            if (addrVal.length < 5) {
+                e.preventDefault();
+                alert('배송 주소는 최소 5자 이상 입력해주세요.');
+                shippingAddress.focus();
+                return false;
+            }
+
+            // 모든 검증 통과 시 즉시 버튼 비활성화 (중복 클릭 방지)
+            submitBtn.disabled = true;
+            submitBtn.classList.add('disabled');
+            if (submitBtnText) {
+                submitBtnText.textContent = '결제 및 주문 처리 중...';
+            }
+            submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span> 결제 처리 중입니다...';
+        });
+    }
+});
 </script>
 {% endblock %}

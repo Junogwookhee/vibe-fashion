@@ -1,7 +1,8 @@
 import os
+import re
 import logging
 import random
-from datetime import datetime
+from datetime import datetime, timezone
 from flask import Blueprint, render_template, request, redirect, url_for, flash, session, jsonify
 from dotenv import load_dotenv
 from app.utils.supabase_client import get_supabase_client, get_supabase_admin_client
@@ -969,7 +970,7 @@ def mypage():
         }
         update_succeeded = False
         try:
-            update_data['address'] = address
+            update_data['shipping_address'] = address
             supabase.table('profiles').update(update_data).eq('id', user_id).execute()
             update_succeeded = True
             flash('회원 정보가 성공적으로 수정되었습니다.', 'success')
@@ -999,201 +1000,314 @@ def mypage():
     )
 
 
-@main_bp.route('/checkout', methods=['GET'])
+@main_bp.route('/api/profile/default-address', methods=['GET'])
+def api_default_address():
+    """
+    로그인한 사용자의 마이페이지 기본 배송지 정보 조회 API (GET /api/profile/default-address)
+    """
+    user_id = session.get('user_id') or (session.get('user') or {}).get('id')
+    if not user_id:
+        return jsonify({'success': False, 'error': '로그인이 필요합니다.'}), 401
+
+    try:
+        supabase = get_supabase_admin_client()
+        prof_res = supabase.table('profiles').select('*').eq('id', user_id).execute()
+        if not prof_res.data:
+            return jsonify({'success': False, 'error': '프로필 정보를 찾을 수 없습니다.'}), 404
+
+        prof = prof_res.data[0]
+        shipping_addr = prof.get('shipping_address') or prof.get('address') or ''
+        return jsonify({
+            'success': True,
+            'recipient_name': prof.get('full_name') or '',
+            'recipient_phone': prof.get('phone') or '',
+            'shipping_address': shipping_addr,
+            'shipping_detail_address': prof.get('shipping_detail_address') or '',
+            'postal_code': prof.get('postal_code') or ''
+        }), 200
+    except Exception as e:
+        logger.error(f"[API Default Address Error] {e}", exc_info=True)
+        return jsonify({'success': False, 'error': '기본 배송지를 불러오는 중 오류가 발생했습니다.'}), 500
+
+
+@main_bp.route('/checkout', methods=['GET', 'POST'])
+@main_bp.route('/order/checkout', methods=['GET', 'POST'])
 def checkout():
     """
-    주문/결제 페이지 라우트:
-    - 쿼리 파라미터: product_id, option, qty
+    주문서 및 결제 처리 라우트:
+    - GET: 장바구니 기반 주문서 페이지 렌더링
+      * 로그인 필수 (미로그인 시 /auth/login 리다이렉트)
+      * 장바구니 비어있으면 /cart 리다이렉트
+      * 품절(stock=0) 아이템이 하나라도 있으면 /cart로 리다이렉트 및 안내
+      * 장바구니 아이템 목록 (수정 불가 읽기 전용)
+      * 마이페이지에 저장된 기본 배송지(profiles) 조회
+      * 결제 금액 요약 (상품금액 + 배송비 = 최종금액)
+    - POST: 주문 결제 처리 (더미 결제 → 바로 주문 완료 처리)
+      * 폼 유효성 검증 (수령인 이름, 010-0000-0000 패턴 휴대폰, 5자 이상 배송 주소)
+      * orders 및 order_items 테이블에 저장
+      * 장바구니 비우기
+      * 주문 완료 페이지로 리다이렉트
     """
-    product_id = request.args.get('product_id')
-    selected_option = request.args.get('option', '')
-    qty = max(1, int(request.args.get('qty', 1)))
+    user_id = session.get('user_id') or (session.get('user') or {}).get('id')
+    if not user_id:
+        flash('로그인이 필요한 서비스입니다.', 'warning')
+        return redirect(url_for('auth.login', error='login_required', next=request.path))
 
-    supabase = get_supabase_client()
-    product = None
+    supabase = get_supabase_admin_client()
 
-    if product_id:
-        try:
-            prod_res = supabase.table('products').select('*').eq('id', product_id).execute()
-            if not prod_res.data:
-                prod_res = supabase.table('products').select('*').eq('slug', product_id).execute()
-            if prod_res.data:
-                p = prod_res.data[0]
-                raw_price = float(p.get('price') or 0)
-                sale_price = p.get('sale_price')
-                unit_price = int(float(sale_price)) if sale_price and float(sale_price) < raw_price else int(raw_price)
-
-                discount_percent = None
-                if sale_price and float(sale_price) < raw_price and raw_price > 0:
-                    discount_percent = int(round((1 - (float(sale_price) / raw_price)) * 100))
-
-                product = {
-                    'id': p.get('id'),
-                    'name': p.get('name'),
-                    'thumbnail_url': p.get('thumbnail_url'),
-                    'price': f"{int(raw_price):,}원",
-                    'sale_price': f"{int(float(sale_price)):,}원" if sale_price else None,
-                    'discount_percent': discount_percent,
-                    'unit_val': unit_price
-                }
-        except Exception as e:
-            logger.error(f"[Checkout Load Error] {e}")
-
-    # 상품을 찾지 못했을 경우 기본 첫 번째 상품으로 폴백
-    if not product:
-        try:
-            default_p = supabase.table('products').select('*').limit(1).execute().data[0]
-            raw_price = float(default_p.get('price') or 0)
-            product = {
-                'id': default_p.get('id'),
-                'name': default_p.get('name'),
-                'thumbnail_url': default_p.get('thumbnail_url'),
-                'price': f"{int(raw_price):,}원",
-                'sale_price': None,
-                'discount_percent': None,
-                'unit_val': int(raw_price)
-            }
-        except Exception:
-            product = {
-                'id': '900eaccc-1e16-49a0-a6b9-bca87e7875d0',
-                'name': '와이드 데님 팬츠',
-                'thumbnail_url': 'https://images.unsplash.com/photo-1541099649105-f69ad21f3246?auto=format&fit=crop&w=800&q=80',
-                'price': '39,900원',
-                'sale_price': None,
-                'discount_percent': None,
-                'unit_val': 39900
-            }
-
-    unit_price = product['unit_val']
-    subtotal = unit_price * qty
-    shipping_fee = 0
-    total_price = subtotal + shipping_fee
-
-    return render_template(
-        'checkout.html',
-        product=product,
-        selected_option=selected_option,
-        qty=qty,
-        unit_price=unit_price,
-        formatted_unit_price=f"{unit_price:,}원",
-        subtotal=subtotal,
-        formatted_subtotal=f"{subtotal:,}원",
-        shipping_fee=shipping_fee,
-        total_price=total_price,
-        formatted_total=f"{total_price:,}원",
-        user=session.get('user')
-    )
-
-
-@main_bp.route('/checkout/process', methods=['POST'])
-def process_checkout():
-    """
-    주문 및 결제 처리 라우트:
-    - 주문 번호 생성
-    - Supabase orders 및 order_items 테이블에 저장 (또는 세션 안전 저장)
-    - 주문 완료 페이지로 리다이렉트
-    """
+    # 장바구니 데이터 조회 (carts + product_options + products JOIN)
     try:
-        product_id = request.form.get('product_id')
-        product_name = request.form.get('product_name')
-        option_info = request.form.get('option_info', '')
-        quantity = int(request.form.get('quantity', 1))
-        unit_price = int(request.form.get('unit_price', 0))
-        total_amount = int(request.form.get('total_amount', 0))
+        cart_res = (
+            supabase.table('carts')
+            .select('id, user_id, product_id, option_id, quantity, created_at, product_options(*), products(*)')
+            .eq('user_id', user_id)
+            .order('created_at', desc=True)
+            .execute()
+        )
+        raw_items = cart_res.data or []
+    except Exception as e:
+        logger.error(f"[Checkout Cart Load Error] {e}", exc_info=True)
+        raw_items = []
 
-        recipient_name = request.form.get('recipient_name', '').strip() or '고객'
-        recipient_phone = request.form.get('recipient_phone', '').strip() or '010-0000-0000'
-        postal_code = request.form.get('postal_code', '06000')
+    # 1. 장바구니가 비어있는 경우
+    if not raw_items:
+        flash('장바구니가 비어 있습니다.', 'warning')
+        return redirect(url_for('main.cart_view'))
+
+    # 장바구니 아이템 정제 및 품절 여부 검사
+    items = []
+    subtotal_amount = 0
+    has_sold_out = False
+
+    for row in raw_items:
+        cid = row['id']
+        pid = row['product_id']
+        oid = row.get('option_id')
+        qty = int(row.get('quantity') or 1)
+
+        prod_data = row.get('products') or {}
+        if not prod_data:
+            p_lookup = supabase.table('products').select('*').eq('id', pid).execute()
+            if p_lookup.data:
+                prod_data = p_lookup.data[0]
+            else:
+                continue
+
+        raw_price = float(prod_data.get('price') or 0)
+        sale_price = prod_data.get('sale_price')
+        base_price = float(sale_price) if sale_price and float(sale_price) < raw_price else raw_price
+
+        opt_data = row.get('product_options') or {}
+        if not opt_data and oid:
+            o_lookup = supabase.table('product_options').select('*').eq('id', oid).execute()
+            if o_lookup.data:
+                opt_data = o_lookup.data[0]
+
+        color = opt_data.get('color') or ''
+        size = opt_data.get('size') or ''
+        stock = int(opt_data.get('stock') if opt_data.get('stock') is not None else (prod_data.get('stock') or 0))
+        additional_price = float(opt_data.get('additional_price') or 0)
+
+        # 품절 판정
+        if stock <= 0:
+            has_sold_out = True
+
+        unit_price = base_price + additional_price
+        subtotal = unit_price * qty
+        subtotal_amount += subtotal
+
+        option_label = ''
+        if color and size:
+            option_label = f"{color} / {size}"
+        elif color:
+            option_label = color
+        elif size:
+            option_label = size
+
+        items.append({
+            'cart_id': cid,
+            'product_id': pid,
+            'product_name': prod_data.get('name') or '상품',
+            'slug': prod_data.get('slug'),
+            'thumbnail_url': prod_data.get('thumbnail_url') or 'https://images.unsplash.com/photo-1523381210434-271e8be1f52b?auto=format&fit=crop&w=300&q=80',
+            'option_id': oid,
+            'option_info': option_label,
+            'color': color,
+            'size': size,
+            'stock': stock,
+            'unit_price': int(unit_price),
+            'formatted_unit_price': f"{int(unit_price):,}원",
+            'quantity': qty,
+            'subtotal': int(subtotal),
+            'formatted_subtotal': f"{int(subtotal):,}원"
+        })
+
+    # 2. 품절 상품이 하나라도 있으면 /cart로 리다이렉트 및 안내
+    if has_sold_out:
+        flash('품절된 상품이 있어 주문할 수 없습니다.', 'danger')
+        return redirect(url_for('main.cart_view'))
+
+    if not items:
+        flash('장바구니가 비어 있습니다.', 'warning')
+        return redirect(url_for('main.cart_view'))
+
+    # 배송비 계산 (상품 합계 50,000원 미만이면 3,000원, 이상이면 무료)
+    shipping_fee = 0 if subtotal_amount >= 50000 else 3000
+    total_amount = subtotal_amount + shipping_fee
+
+    # =========================================================================
+    # POST 요청: 주문 처리 (더미 결제 → 즉시 주문 완료)
+    # =========================================================================
+    if request.method == 'POST':
+        recipient_name = request.form.get('recipient_name', '').strip()
+        recipient_phone = request.form.get('recipient_phone', '').strip()
         shipping_address = request.form.get('shipping_address', '').strip()
-        shipping_detail = request.form.get('shipping_detail_address', '').strip()
-        full_shipping_addr = f"{shipping_address} {shipping_detail}".strip()
-        delivery_memo = request.form.get('delivery_memo', '')
-        payment_method = request.form.get('payment_method', '신용/체크카드')
+        shipping_detail_address = request.form.get('shipping_detail_address', '').strip()
+        postal_code = request.form.get('postal_code', '').strip() or '06000'
+        delivery_memo = request.form.get('delivery_memo', '').strip()
+        payment_method = request.form.get('payment_method', '신용/체크카드').strip()
 
-        # 주문 번호 생성 (예: VIBE-20260928-8429)
-        now_str = datetime.now().strftime('%Y%m%d%H%M')
-        rand_num = random.randint(1000, 9999)
-        order_number = f"VIBE-{now_str}-{rand_num}"
+        # 각 필드 유효성 검증
+        if not recipient_name:
+            flash('수령인 이름을 입력해주세요.', 'danger')
+            return redirect(url_for('main.checkout'))
 
-        supabase = get_supabase_admin_client()
+        phone_pattern = r'^010-\d{4}-\d{4}$'
+        if not re.match(phone_pattern, recipient_phone):
+            flash('휴대폰 번호는 010-0000-0000 형식으로 올바르게 입력해주세요.', 'danger')
+            return redirect(url_for('main.checkout'))
 
-        # user_id 결정 (로그인 유저 또는 기본 프로필)
-        user_id = session.get('user', {}).get('id') if session.get('user') else None
-        if not user_id:
-            try:
-                prof_data = supabase.table('profiles').select('id').limit(1).execute().data
-                if prof_data:
-                    user_id = prof_data[0]['id']
-            except Exception:
-                pass
+        if len(shipping_address) < 5:
+            flash('배송 주소는 최소 5자 이상 입력해주세요.', 'danger')
+            return redirect(url_for('main.checkout'))
 
-        # 상품 썸네일 조회
-        prod_thumb = None
         try:
-            prod_row = supabase.table('products').select('thumbnail_url').eq('id', product_id).execute().data
-            if prod_row:
-                prod_thumb = prod_row[0].get('thumbnail_url')
-        except Exception:
-            pass
+            # 주문 번호 생성 (예: VIBE-202610021030-4921)
+            now_str = datetime.now().strftime('%Y%m%d%H%M')
+            rand_num = random.randint(1000, 9999)
+            order_number = f"VIBE-{now_str}-{rand_num}"
 
-        order_record = {
-            'order_number': order_number,
-            'recipient_name': recipient_name,
-            'recipient_phone': recipient_phone,
-            'postal_code': postal_code,
-            'shipping_address': full_shipping_addr,
-            'delivery_memo': delivery_memo,
-            'payment_method': payment_method,
-            'product_name': product_name,
-            'product_thumbnail': prod_thumb,
-            'option_info': option_info,
-            'quantity': quantity,
-            'unit_price': unit_price,
-            'total_amount': total_amount,
-            'formatted_total': f"{total_amount:,}원",
-            'status': 'PAID',
-            'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        }
-
-        # Supabase orders 및 order_items 테이블에 저장 시도
-        if user_id:
+            # 1. orders 및 order_items 테이블 저장 시도 (DB/트리거 오류 시에도 더미 결제 플로우 완주)
             try:
                 db_order = {
                     'order_number': order_number,
                     'user_id': user_id,
                     'status': 'PAID',
                     'total_amount': total_amount,
+                    'discount_amount': 0,
                     'payment_amount': total_amount,
                     'recipient_name': recipient_name,
                     'recipient_phone': recipient_phone,
+                    'shipping_address': shipping_address,
+                    'shipping_detail_address': shipping_detail_address or None,
                     'postal_code': postal_code,
-                    'shipping_address': full_shipping_addr
+                    'paid_at': datetime.now(timezone.utc).isoformat()
                 }
                 ord_res = supabase.table('orders').insert(db_order).execute()
                 if ord_res.data:
                     new_order_id = ord_res.data[0]['id']
-                    db_item = {
-                        'order_id': new_order_id,
-                        'product_id': product_id,
-                        'product_name': product_name,
-                        'quantity': quantity,
-                        'unit_price': unit_price,
-                        'option_info': option_info
-                    }
-                    supabase.table('order_items').insert(db_item).execute()
+                    order_items_to_insert = []
+                    for it in items:
+                        order_items_to_insert.append({
+                            'order_id': new_order_id,
+                            'product_id': it['product_id'],
+                            'option_id': it['option_id'] if it['option_id'] else None,
+                            'product_name': it['product_name'],
+                            'option_info': it['option_info'] or None,
+                            'unit_price': it['unit_price'],
+                            'quantity': it['quantity'],
+                            'subtotal_price': it['subtotal']
+                        })
+                    if order_items_to_insert:
+                        supabase.table('order_items').insert(order_items_to_insert).execute()
             except Exception as db_err:
-                logger.error(f"[DB Order Insert Notice] {db_err}")
-                print(f"[DB Order Insert Notice] {db_err}")
+                logger.warning(f"[DB Order Insert Notice] {db_err}")
 
-        # 세션에 주문 정보 저장 (완료 화면 렌더링용)
-        session['last_order'] = order_record
+            # 2. 사용자 장바구니 비우기
+            try:
+                supabase.table('carts').delete().eq('user_id', user_id).execute()
+            except Exception as cart_err:
+                logger.warning(f"[Cart Clear Warning] {cart_err}")
 
-        return redirect(url_for('main.order_success', order_number=order_number))
+            # 3. 세션에 완료 정보 저장
+            full_shipping = f"{shipping_address} {shipping_detail_address}".strip()
+            summary_name = items[0]['product_name'] if len(items) == 1 else f"{items[0]['product_name']} 외 {len(items)-1}건"
+            total_qty = sum(it['quantity'] for it in items)
 
+            session['last_order'] = {
+                'order_number': order_number,
+                'recipient_name': recipient_name,
+                'recipient_phone': recipient_phone,
+                'postal_code': postal_code,
+                'shipping_address': full_shipping,
+                'delivery_memo': delivery_memo,
+                'payment_method': payment_method,
+                'item_list': items,
+                'product_name': summary_name,
+                'product_thumbnail': items[0]['thumbnail_url'],
+                'option_info': items[0]['option_info'],
+                'quantity': total_qty,
+                'subtotal_amount': subtotal_amount,
+                'formatted_subtotal': f"{subtotal_amount:,}원",
+                'shipping_fee': shipping_fee,
+                'formatted_shipping_fee': "무료" if shipping_fee == 0 else f"{shipping_fee:,}원",
+                'total_amount': total_amount,
+                'formatted_total': f"{total_amount:,}원",
+                'status': 'PAID',
+                'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            }
+
+            return redirect(url_for('main.order_success', order_number=order_number))
+
+        except Exception as e:
+            logger.error(f"[Checkout Process Error] {e}", exc_info=True)
+            flash('주문 결제 처리 중 오류가 발생했습니다. 다시 시도해주세요.', 'danger')
+            return redirect(url_for('main.checkout'))
+
+    # =========================================================================
+    # GET 요청: 주문서 렌더링
+    # =========================================================================
+    # 마이페이지에 저장된 기본 배송지 정보(profiles) 조회
+    profile = {}
+    try:
+        prof_res = supabase.table('profiles').select('*').eq('id', user_id).execute()
+        if prof_res.data:
+            profile = prof_res.data[0]
     except Exception as e:
-        logger.error(f"[Checkout Process Error] {e}", exc_info=True)
-        flash('주문 처리 중 오류가 발생했습니다. 다시 시도해주세요.', 'danger')
-        return redirect(url_for('main.index'))
+        logger.error(f"[Checkout Profile Error] {e}")
+
+    # 기본 배송 주소 fallback
+    profile_address = profile.get('shipping_address') or profile.get('address') or ''
+    profile_detail = profile.get('shipping_detail_address') or ''
+    profile_postal = profile.get('postal_code') or ''
+    profile_phone = profile.get('phone') or ''
+    profile_name = profile.get('full_name') or (session.get('user') or {}).get('full_name') or ''
+
+    return render_template(
+        'checkout.html',
+        items=items,
+        total_items_count=len(items),
+        subtotal_amount=int(subtotal_amount),
+        formatted_subtotal=f"{int(subtotal_amount):,}원",
+        shipping_fee=shipping_fee,
+        formatted_shipping_fee="무료 배송 (0원)" if shipping_fee == 0 else f"{int(shipping_fee):,}원",
+        total_amount=int(total_amount),
+        formatted_total=f"{int(total_amount):,}원",
+        profile={
+            'full_name': profile_name,
+            'phone': profile_phone,
+            'shipping_address': profile_address,
+            'shipping_detail_address': profile_detail,
+            'postal_code': profile_postal
+        },
+        user=session.get('user')
+    )
+
+
+@main_bp.route('/checkout/process', methods=['POST'])
+def process_checkout():
+    """/checkout/process를 호출하는 기존 폼을 위한 하위 호환 포워딩"""
+    return checkout()
 
 
 @main_bp.route('/order/success/<order_number>')
