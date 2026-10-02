@@ -104,6 +104,22 @@ def index():
         logger.error(f"[Supabase Error] 데이터 조회 실패: {e}", exc_info=True)
         print(f"[Supabase Error] 데이터 조회 실패: {e}")
 
+    top_announcement = None
+    try:
+        announcement_res = (
+            get_supabase_client().table('announcements')
+            .select('content, link_url')
+            .eq('is_active', True)
+            .order('sort_order', desc=False)
+            .order('created_at', desc=True)
+            .limit(1)
+            .execute()
+        )
+        announcements = announcement_res.data or []
+        top_announcement = announcements[0] if announcements else None
+    except Exception as e:
+        logger.warning(f"[Announcement Fetch Notice] {e}")
+
     # 리뷰가 비어있을 경우를 대비한 세련된 폴백 데이터
     if not reviews:
         reviews = [
@@ -152,7 +168,8 @@ def index():
         products=products,
         reviews=reviews,
         avg_rating=avg_rating,
-        total_reviews=total_reviews
+        total_reviews=total_reviews,
+        top_announcement=top_announcement
     )
 
 

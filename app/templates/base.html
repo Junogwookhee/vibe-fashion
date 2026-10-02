@@ -20,6 +20,22 @@
 <body>
 
     <!-- 1. 최상단 공지 띠 배너 (Top Announcement Bar) -->
+    {% if top_announcement %}
+    <aside class="top-announcement-bar py-1 text-center">
+        <div class="container d-flex align-items-center justify-content-center gap-2">
+            <span class="badge bg-danger rounded-pill px-2 py-0 small fw-bold">NOTICE</span>
+            <span class="announcement-text small">
+                {% if top_announcement.link_url %}
+                    <a href="{{ top_announcement.link_url }}" class="text-white text-decoration-none">
+                        {{ top_announcement.content }} <i class="bi bi-chevron-right very-small ms-1"></i>
+                    </a>
+                {% else %}
+                    {{ top_announcement.content }}
+                {% endif %}
+            </span>
+        </div>
+    </aside>
+    {% elif top_announcement is not defined and request.endpoint != 'main.index' %}
     <aside class="top-announcement-bar py-1 text-center">
         <div class="container d-flex align-items-center justify-content-center gap-3">
             <span class="badge bg-danger rounded-pill px-2 py-1 small fw-bold">EVENT</span>
@@ -28,6 +44,7 @@
             </span>
         </div>
     </aside>
+    {% endif %}
 
     <!-- 2. 프리미엄 내비게이션 바 (Glassmorphism Navbar) -->
     <header class="sticky-top">
