@@ -1,0 +1,317 @@
+{% extends 'admin/base.html' %}
+
+{% block title %}
+    {% if is_edit %}상품 정보 수정: {{ product.name }} | VIBE-FASHION 관리자{% else %}신규 상품 등록 | VIBE-FASHION 관리자{% endif %}
+{% endblock %}
+
+{% block page_title %}
+    {% if is_edit %}상품 정보 수정{% else %}신규 상품 등록{% endif %}
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-12 col-xl-10">
+        <!-- 뒤로가기 링크 -->
+        <div class="mb-3">
+            <a href="{{ url_for('admin.product_list') }}" class="text-muted small text-decoration-none">
+                <i class="bi bi-arrow-left me-1"></i>상품 목록으로 돌아가기
+            </a>
+        </div>
+
+        <form method="POST" action="{% if is_edit %}{{ url_for('admin.product_edit', product_id=product.id) }}{% else %}{{ url_for('admin.product_new') }}{% endif %}" id="productForm" novalidate>
+            <!-- CSRF 보호 토큰 -->
+            <input type="hidden" name="csrf_token" value="{{ admin_csrf_token }}">
+
+            <!-- 1. 기본 정보 카드 -->
+            <div class="admin-card mb-4">
+                <div class="admin-card-header">
+                    <h2 class="admin-card-title d-flex align-items-center gap-2">
+                        <i class="bi bi-info-circle-fill text-coral"></i>
+                        <span>기본 상품 정보</span>
+                    </h2>
+                </div>
+                <div class="p-4">
+                    <div class="row g-3">
+                        <!-- 상품명 (필수) -->
+                        <div class="col-12 col-md-8">
+                            <label for="name" class="form-label fw-bold small">상품명 <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="name" name="name" value="{{ product.name or '' }}" placeholder="예: 미니멀 캐시미어 오버핏 니트" required>
+                            <div class="very-small text-muted mt-1">고객에게 표시될 공식 상품명입니다.</div>
+                        </div>
+
+                        <!-- 카테고리 -->
+                        <div class="col-12 col-md-4">
+                            <label for="category_id" class="form-label fw-bold small">카테고리</label>
+                            <select class="form-select" id="category_id" name="category_id">
+                                <option value="">카테고리 선택</option>
+                                {% for cat in categories %}
+                                    <option value="{{ cat.id }}" {% if product.category_id == cat.id %}selected{% endif %}>{{ cat.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
+                        <!-- 슬러그 (URL 식별자) -->
+                        <div class="col-12 col-md-6">
+                            <label for="slug" class="form-label fw-bold small">슬러그 (URL 식별자)</label>
+                            <input type="text" class="form-control font-monospace" id="slug" name="slug" value="{{ product.slug or '' }}" placeholder="예: minimal-cashmere-knit (미입력 시 자동 생성)">
+                            <div class="very-small text-muted mt-1">고유 영문/숫자/하이픈 주소로 사용됩니다.</div>
+                        </div>
+
+                        <!-- 썸네일 이미지 URL 및 미리보기 -->
+                        <div class="col-12 col-md-6">
+                            <label for="thumbnail_url" class="form-label fw-bold small">대표 이미지 URL</label>
+                            <div class="input-group">
+                                <input type="url" class="form-control" id="thumbnail_url" name="thumbnail_url" value="{{ product.thumbnail_url or '' }}" placeholder="https://images.unsplash.com/...">
+                                <button class="btn btn-outline-secondary btn-sm" type="button" id="btnPreviewImage">미리보기</button>
+                            </div>
+                            <div class="very-small text-muted mt-1">고화질 웹 이미지 링크(http:// 또는 https://)를 입력하세요.</div>
+                        </div>
+
+                        <!-- 이미지 라이브 미리보기 박스 -->
+                        <div class="col-12 {% if not product.thumbnail_url %}d-none{% endif %}" id="imagePreviewContainer">
+                            <div class="p-3 bg-light rounded-3 border d-inline-flex align-items-center gap-3">
+                                <img src="{{ product.thumbnail_url or '' }}" id="imagePreview" alt="미리보기" class="rounded border object-fit-cover" style="width: 70px; height: 85px;">
+                                <div class="very-small text-muted">
+                                    <strong class="text-dark d-block mb-1">이미지 미리보기 확인</strong>
+                                    링크가 올바르면 상품 상세 및 메인 페이지에 위 비율로 표시됩니다.
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 정가 및 판매가 -->
+                        <div class="col-12 col-sm-4">
+                            <label for="price" class="form-label fw-bold small">정상 판매가 (원) <span class="text-danger">*</span></label>
+                            <input type="number" class="form-control" id="price" name="price" value="{{ product.price|int if product.price is not none else '' }}" min="0" step="100" placeholder="예: 49000" required>
+                        </div>
+
+                        <div class="col-12 col-sm-4">
+                            <label for="sale_price" class="form-label fw-bold small">할인 판매가 (원, 선택)</label>
+                            <input type="number" class="form-control" id="sale_price" name="sale_price" value="{{ product.sale_price|int if product.sale_price is not none else '' }}" min="0" step="100" placeholder="미할인 시 비워둠">
+                        </div>
+
+                        <div class="col-12 col-sm-4">
+                            <label for="stock" class="form-label fw-bold small">기본 재고 수량 <span class="text-danger">*</span></label>
+                            <input type="number" class="form-control" id="stock" name="stock" value="{{ product.stock if product.stock is not none else 0 }}" min="0" step="1" required>
+                            <div class="very-small text-muted mt-1">옵션 미사용 시 기준이 되는 단일 재고입니다.</div>
+                        </div>
+
+                        <!-- 한 줄 요약 -->
+                        <div class="col-12">
+                            <label for="summary" class="form-label fw-bold small">상품 한 줄 요약</label>
+                            <input type="text" class="form-control" id="summary" name="summary" value="{{ product.summary or '' }}" placeholder="예: 부드러운 촉감과 여유로운 실루엣의 시즌 베스트 니트">
+                        </div>
+
+                        <!-- 상세 설명 -->
+                        <div class="col-12">
+                            <label for="description" class="form-label fw-bold small">상품 상세 설명</label>
+                            <textarea class="form-control" id="description" name="description" rows="4" placeholder="원단 특성, 핏감, 세탁 주의사항 등을 작성하세요.">{{ product.description or '' }}</textarea>
+                        </div>
+
+                        <!-- 상태 및 플래그 체크박스 -->
+                        <div class="col-12 pt-2 border-top">
+                            <div class="d-flex flex-wrap gap-4">
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" role="switch" id="is_active" name="is_active" value="true" {% if product.is_active is not defined or product.is_active %}checked{% endif %}>
+                                    <label class="form-check-label fw-bold small" for="is_active">쇼핑몰 판매 활성화 (판매 중)</label>
+                                    <div class="very-small text-muted">체크 해제 시 상품이 즉시 [판매 중지(보관)] 상태로 전환됩니다.</div>
+                                </div>
+
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" role="switch" id="is_featured" name="is_featured" value="true" {% if product.is_featured %}checked{% endif %}>
+                                    <label class="form-check-label fw-bold small" for="is_featured">메인 홈 추천 상품 배지 노출</label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 2. 색상/사이즈 옵션 관리 카드 -->
+            <div class="admin-card mb-4">
+                <div class="admin-card-header">
+                    <div class="d-flex align-items-center gap-2">
+                        <i class="bi bi-layers-fill text-coral"></i>
+                        <h2 class="admin-card-title">색상 및 사이즈 옵션 설정 (선택)</h2>
+                    </div>
+                    <button type="button" class="btn btn-outline-dark btn-sm rounded-pill px-3 very-small" id="btnAddOptionRow">
+                        <i class="bi bi-plus-circle me-1"></i>옵션 행 추가
+                    </button>
+                </div>
+                <div class="p-4">
+                    <p class="very-small text-muted mb-3">
+                        색상이나 사이즈별로 재고가 분리되어 관리되는 경우 입력하세요. 옵션을 입력하지 않으면 기본 재고가 적용됩니다.
+                    </p>
+
+                    <div class="table-responsive">
+                        <table class="table admin-table mb-0" id="optionsTable">
+                            <thead>
+                                <tr>
+                                    <th style="width: 25%;">색상 (Color)</th>
+                                    <th style="width: 25%;">사이즈 (Size)</th>
+                                    <th style="width: 20%;">추가 금액 (원)</th>
+                                    <th style="width: 20%;">재고 수량</th>
+                                    <th class="text-end" style="width: 10%;">삭제</th>
+                                </tr>
+                            </thead>
+                            <tbody id="optionsTableBody">
+                                {% for opt in options %}
+                                <tr>
+                                    <td>
+                                        <input type="hidden" name="option_id[]" value="{{ opt.id }}">
+                                        <input type="text" name="option_color[]" class="form-control form-control-sm" value="{{ opt.color or '' }}" placeholder="예: 블랙">
+                                    </td>
+                                    <td>
+                                        <input type="text" name="option_size[]" class="form-control form-control-sm" value="{{ opt.size or '' }}" placeholder="예: S, M, L">
+                                    </td>
+                                    <td>
+                                        <input type="number" name="option_additional_price[]" class="form-control form-control-sm" value="{{ opt.additional_price|int if opt.additional_price is not none else 0 }}" min="0" step="100">
+                                    </td>
+                                    <td>
+                                        <input type="number" name="option_stock[]" class="form-control form-control-sm" value="{{ opt.stock if opt.stock is not none else 0 }}" min="0" step="1">
+                                    </td>
+                                    <td class="text-end">
+                                        <button type="button" class="btn btn-outline-danger btn-sm p-1 px-2 btn-remove-option" title="옵션 행 삭제">
+                                            <i class="bi bi-x-lg"></i>
+                                        </button>
+                                    </td>
+                                </tr>
+                                {% else %}
+                                <!-- 기본 3개 샘플 옵션 행 -->
+                                <tr>
+                                    <td>
+                                        <input type="hidden" name="option_id[]" value="">
+                                        <input type="text" name="option_color[]" class="form-control form-control-sm" placeholder="예: 블랙">
+                                    </td>
+                                    <td>
+                                        <input type="text" name="option_size[]" class="form-control form-control-sm" placeholder="예: S">
+                                    </td>
+                                    <td>
+                                        <input type="number" name="option_additional_price[]" class="form-control form-control-sm" value="0" min="0" step="100">
+                                    </td>
+                                    <td>
+                                        <input type="number" name="option_stock[]" class="form-control form-control-sm" value="10" min="0" step="1">
+                                    </td>
+                                    <td class="text-end">
+                                        <button type="button" class="btn btn-outline-danger btn-sm p-1 px-2 btn-remove-option">
+                                            <i class="bi bi-x-lg"></i>
+                                        </button>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td>
+                                        <input type="hidden" name="option_id[]" value="">
+                                        <input type="text" name="option_color[]" class="form-control form-control-sm" placeholder="예: 블랙">
+                                    </td>
+                                    <td>
+                                        <input type="text" name="option_size[]" class="form-control form-control-sm" placeholder="예: M">
+                                    </td>
+                                    <td>
+                                        <input type="number" name="option_additional_price[]" class="form-control form-control-sm" value="0" min="0" step="100">
+                                    </td>
+                                    <td>
+                                        <input type="number" name="option_stock[]" class="form-control form-control-sm" value="15" min="0" step="1">
+                                    </td>
+                                    <td class="text-end">
+                                        <button type="button" class="btn btn-outline-danger btn-sm p-1 px-2 btn-remove-option">
+                                            <i class="bi bi-x-lg"></i>
+                                        </button>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 하단 저장 및 취소 버튼 -->
+            <div class="d-flex justify-content-between align-items-center mb-5 pb-4">
+                <a href="{{ url_for('admin.product_list') }}" class="btn btn-outline-secondary rounded-pill px-4 py-2">
+                    취소
+                </a>
+                <button type="submit" class="btn btn-coral rounded-pill px-5 py-2 shadow" id="btnSubmitProduct">
+                    <i class="bi bi-check-lg me-1"></i>
+                    <span>{% if is_edit %}상품 정보 수정 완료{% else %}신규 상품 등록 완료{% endif %}</span>
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // 1. 이미지 미리보기 인터랙션
+    const urlInput = document.getElementById('thumbnail_url');
+    const previewBtn = document.getElementById('btnPreviewImage');
+    const previewContainer = document.getElementById('imagePreviewContainer');
+    const previewImg = document.getElementById('imagePreview');
+
+    function updatePreview() {
+        const val = urlInput.value.trim();
+        if (val && (val.startsWith('http://') || val.startsWith('https://'))) {
+            previewImg.src = val;
+            previewContainer.classList.remove('d-none');
+        } else {
+            previewContainer.classList.add('d-none');
+        }
+    }
+
+    if (previewBtn) previewBtn.addEventListener('click', updatePreview);
+    if (urlInput) urlInput.addEventListener('blur', updatePreview);
+
+    // 2. 옵션 행 동적 추가
+    const btnAddOption = document.getElementById('btnAddOptionRow');
+    const tableBody = document.getElementById('optionsTableBody');
+
+    if (btnAddOption && tableBody) {
+        btnAddOption.addEventListener('click', function() {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>
+                    <input type="hidden" name="option_id[]" value="">
+                    <input type="text" name="option_color[]" class="form-control form-control-sm" placeholder="색상">
+                </td>
+                <td>
+                    <input type="text" name="option_size[]" class="form-control form-control-sm" placeholder="사이즈">
+                </td>
+                <td>
+                    <input type="number" name="option_additional_price[]" class="form-control form-control-sm" value="0" min="0" step="100">
+                </td>
+                <td>
+                    <input type="number" name="option_stock[]" class="form-control form-control-sm" value="10" min="0" step="1">
+                </td>
+                <td class="text-end">
+                    <button type="button" class="btn btn-outline-danger btn-sm p-1 px-2 btn-remove-option">
+                        <i class="bi bi-x-lg"></i>
+                    </button>
+                </td>
+            `;
+            tableBody.appendChild(tr);
+        });
+    }
+
+    // 3. 옵션 행 삭제 (위임)
+    if (tableBody) {
+        tableBody.addEventListener('click', function(e) {
+            const btn = e.target.closest('.btn-remove-option');
+            if (btn) {
+                const tr = btn.closest('tr');
+                if (tr) tr.remove();
+            }
+        });
+    }
+
+    // 4. 중복 제출 방지
+    const form = document.getElementById('productForm');
+    const submitBtn = document.getElementById('btnSubmitProduct');
+    if (form && submitBtn) {
+        form.addEventListener('submit', function() {
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>저장 중...';
+        });
+    }
+});
+</script>
+{% endblock %}

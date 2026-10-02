@@ -1,0 +1,230 @@
+{% extends 'admin/base.html' %}
+
+{% block title %}주문 상세: {{ order.order_number }} | VIBE-FASHION 관리자{% endblock %}
+{% block page_title %}주문 상세 조회{% endblock %}
+
+{% block content %}
+<!-- 뒤로가기 링크 -->
+<div class="mb-3">
+    <a href="{{ url_for('admin.order_list') }}" class="text-muted small text-decoration-none">
+        <i class="bi bi-arrow-left me-1"></i>주문 목록으로 돌아가기
+    </a>
+</div>
+
+<div class="row g-4">
+    <!-- 좌측: 주문 기본 정보 및 주문 상품 목록 -->
+    <div class="col-12 col-lg-8">
+        <!-- 1. 주문 개요 카드 -->
+        <div class="admin-card mb-4">
+            <div class="admin-card-header">
+                <div class="d-flex align-items-center gap-2">
+                    <i class="bi bi-receipt text-coral"></i>
+                    <h2 class="admin-card-title">주문 정보 #{{ order.order_number }}</h2>
+                </div>
+                <div>
+                    {% set st = cur_status %}
+                    {% if st == 'PAID' %}
+                        <span class="badge bg-primary badge-status">결제 완료</span>
+                    {% elif st == 'PREPARING' %}
+                        <span class="badge bg-warning text-dark badge-status">배송 준비 중</span>
+                    {% elif st == 'SHIPPING' %}
+                        <span class="badge bg-info text-dark badge-status">배송 중</span>
+                    {% elif st == 'DELIVERED' %}
+                        <span class="badge bg-success badge-status">배송 완료</span>
+                    {% elif st == 'CANCELLED' %}
+                        <span class="badge bg-secondary badge-status">주문 취소</span>
+                    {% else %}
+                        <span class="badge bg-light text-dark border badge-status">{{ st }}</span>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="p-4">
+                <div class="row g-3">
+                    <div class="col-6 col-sm-3">
+                        <div class="very-small text-muted mb-1">주문 접수 일시</div>
+                        <div class="fw-semibold small">{{ (order.created_at or '')[:19]|replace('T', ' ') }}</div>
+                    </div>
+                    <div class="col-6 col-sm-3">
+                        <div class="very-small text-muted mb-1">결제 완료 일시</div>
+                        <div class="fw-semibold small">{{ (order.paid_at or order.created_at or '')[:19]|replace('T', ' ') }}</div>
+                    </div>
+                    <div class="col-6 col-sm-3">
+                        <div class="very-small text-muted mb-1">결제 수단</div>
+                        <div class="fw-semibold small">{{ order.payment_method or '신용/체크카드' }}</div>
+                    </div>
+                    <div class="col-6 col-sm-3">
+                        <div class="very-small text-muted mb-1">운송장 번호</div>
+                        <div class="fw-semibold small font-monospace">{{ order.tracking_number or '미등록' }}</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 2. 주문 상품 내역 카드 -->
+        <div class="admin-card mb-4">
+            <div class="admin-card-header">
+                <div class="d-flex align-items-center gap-2">
+                    <i class="bi bi-bag-check-fill text-coral"></i>
+                    <h2 class="admin-card-title">주문 상품 목록 (총 {{ order_items|length }}건)</h2>
+                </div>
+            </div>
+            <div class="table-responsive">
+                <table class="table admin-table mb-0 align-middle">
+                    <thead>
+                        <tr>
+                            <th>상품명</th>
+                            <th>선택 옵션</th>
+                            <th class="text-end">단가</th>
+                            <th class="text-center">수량</th>
+                            <th class="text-end">소계</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for it in order_items %}
+                        <tr>
+                            <td>
+                                <div class="fw-bold text-dark small">{{ it.product_name }}</div>
+                            </td>
+                            <td>
+                                <span class="badge bg-light text-dark border very-small">
+                                    {{ it.option_info or '기본' }}
+                                </span>
+                            </td>
+                            <td class="text-end">
+                                <span class="small">{{ "{:,}".format((it.unit_price or 0)|int) }}원</span>
+                            </td>
+                            <td class="text-center">
+                                <strong class="small">{{ it.quantity }}</strong>개
+                            </td>
+                            <td class="text-end">
+                                <strong class="text-dark small">{{ "{:,}".format((it.subtotal_price or ((it.unit_price or 0) * (it.quantity or 1)))|int) }}원</strong>
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="5" class="p-4 text-center text-muted">주문 상품 내역이 없습니다.</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- 우측: 배송지 정보, 결제 금액, 상태 전환 처리 -->
+    <div class="col-12 col-lg-4">
+        <!-- 3. 주문 상태 변경 처리 카드 -->
+        <div class="admin-card mb-4 border-primary border-opacity-25">
+            <div class="admin-card-header bg-light">
+                <div class="d-flex align-items-center gap-2">
+                    <i class="bi bi-arrow-repeat text-primary"></i>
+                    <h2 class="admin-card-title small">배송 및 상태 관리</h2>
+                </div>
+            </div>
+            <div class="p-3">
+                {% if allowed_next_statuses %}
+                <form method="POST" action="{{ url_for('admin.order_update_status', order_id=order.id) }}">
+                    <!-- CSRF 토큰 -->
+                    <input type="hidden" name="csrf_token" value="{{ admin_csrf_token }}">
+
+                    <div class="mb-3">
+                        <label for="orderStatusSelect" class="form-label very-small fw-bold text-muted">변경할 다음 상태</label>
+                        <select class="form-select form-select-sm" id="orderStatusSelect" name="status">
+                            <option value="{{ cur_status }}">현재 상태 유지 ({{ status_labels.get(cur_status, cur_status) }})</option>
+                            {% for next_st in allowed_next_statuses %}
+                                <option value="{{ next_st }}">&rarr; {{ status_labels.get(next_st, next_st) }}</option>
+                            {% endfor %}
+                        </select>
+                        <div class="very-small text-muted mt-1">
+                            * 비즈니스 규칙에 따라 순차적 배송 상태 전환만 허용됩니다.
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="trackingNumberInput" class="form-label very-small fw-bold text-muted">운송장 번호 (택배사/송장번호)</label>
+                        <input type="text" class="form-control form-control-sm font-monospace" id="trackingNumberInput" name="tracking_number" value="{{ order.tracking_number or '' }}" placeholder="예: CJ대한통운 68912345678">
+                    </div>
+
+                    <button type="submit" class="btn btn-primary btn-sm w-100 rounded-pill fw-semibold py-2">
+                        <i class="bi bi-check-circle me-1"></i>상태 업데이트 반영
+                    </button>
+                </form>
+                {% else %}
+                <div class="p-3 bg-light rounded-3 text-center text-muted very-small">
+                    <i class="bi bi-lock-fill d-block mb-1 fs-5 text-muted"></i>
+                    현재 상태(<strong>{{ status_labels.get(cur_status, cur_status) }}</strong>)는 최종 단계이므로 추가 상태 변경이 불가능합니다.
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- 4. 배송지 정보 카드 -->
+        <div class="admin-card mb-4">
+            <div class="admin-card-header">
+                <div class="d-flex align-items-center gap-2">
+                    <i class="bi bi-truck text-coral"></i>
+                    <h2 class="admin-card-title small">배송지 정보</h2>
+                </div>
+            </div>
+            <div class="p-3">
+                <table class="table table-borderless table-sm very-small mb-0">
+                    <tbody>
+                        <tr>
+                            <th class="text-muted ps-0" style="width: 80px;">수령인</th>
+                            <td class="fw-bold text-dark">{{ order.recipient_name or '고객' }}</td>
+                        </tr>
+                        <tr>
+                            <th class="text-muted ps-0">연락처</th>
+                            <td class="text-dark">{{ order.recipient_phone or '-' }}</td>
+                        </tr>
+                        <tr>
+                            <th class="text-muted ps-0">우편번호</th>
+                            <td class="font-monospace">{{ order.postal_code or '-' }}</td>
+                        </tr>
+                        <tr>
+                            <th class="text-muted ps-0">기본주소</th>
+                            <td class="text-dark">{{ order.shipping_address or '-' }}</td>
+                        </tr>
+                        {% if order.shipping_detail_address %}
+                        <tr>
+                            <th class="text-muted ps-0">상세주소</th>
+                            <td class="text-dark">{{ order.shipping_detail_address }}</td>
+                        </tr>
+                        {% endif %}
+                        {% if order.delivery_memo or order.order_memo %}
+                        <tr>
+                            <th class="text-muted ps-0">배송메모</th>
+                            <td class="text-dark">{{ order.delivery_memo or order.order_memo }}</td>
+                        </tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- 5. 결제 금액 요약 카드 -->
+        <div class="admin-card mb-0">
+            <div class="admin-card-header">
+                <div class="d-flex align-items-center gap-2">
+                    <i class="bi bi-credit-card text-coral"></i>
+                    <h2 class="admin-card-title small">결제 금액 요약</h2>
+                </div>
+            </div>
+            <div class="p-3">
+                <div class="d-flex justify-content-between very-small text-muted mb-2">
+                    <span>주문 총액</span>
+                    <span class="text-dark fw-semibold">{{ "{:,}".format((order.total_amount or 0)|int) }}원</span>
+                </div>
+                <div class="d-flex justify-content-between very-small text-muted mb-2">
+                    <span>할인 금액</span>
+                    <span class="text-danger">- {{ "{:,}".format((order.discount_amount or 0)|int) }}원</span>
+                </div>
+                <div class="d-flex justify-content-between small fw-bold text-dark pt-2 border-top">
+                    <span>최종 결제 금액</span>
+                    <span class="text-coral fs-6">{{ "{:,}".format((order.payment_amount or order.total_amount or 0)|int) }}원</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

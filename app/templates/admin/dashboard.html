@@ -1,0 +1,266 @@
+{% extends 'admin/base.html' %}
+
+{% block title %}대시보드 | VIBE-FASHION 관리자{% endblock %}
+{% block page_title %}대시보드 개요{% endblock %}
+
+{% block content %}
+{% if db_error %}
+<div class="alert alert-warning border-0 shadow-sm rounded-3 mb-4 d-flex align-items-center gap-2">
+    <i class="bi bi-exclamation-triangle-fill fs-5 text-warning"></i>
+    <div>{{ db_error }}</div>
+</div>
+{% endif %}
+
+<!-- 1. 핵심 지표 KPI 카드 (실제 데이터 기반) -->
+<div class="row g-3 mb-4">
+    <!-- 전체 상품 수 -->
+    <div class="col-12 col-sm-6 col-xl-3">
+        <div class="admin-card p-3 h-100 mb-0">
+            <div class="d-flex align-items-center justify-content-between mb-2">
+                <span class="text-muted small fw-semibold">전체 상품</span>
+                <span class="badge bg-primary bg-opacity-10 text-primary p-2 rounded-3"><i class="bi bi-box-seam fs-6"></i></span>
+            </div>
+            <div class="fs-3 fw-bold text-dark mb-1">{{ metrics.total_products }}개</div>
+            <div class="very-small text-muted">
+                판매 중: <strong class="text-success">{{ metrics.active_products }}</strong>개 |
+                품절/중지: <strong class="text-danger">{{ metrics.out_of_stock_products }}</strong>개
+            </div>
+        </div>
+    </div>
+
+    <!-- 판매 중 상품 -->
+    <div class="col-12 col-sm-6 col-xl-3">
+        <div class="admin-card p-3 h-100 mb-0">
+            <div class="d-flex align-items-center justify-content-between mb-2">
+                <span class="text-muted small fw-semibold">판매 중 상품</span>
+                <span class="badge bg-success bg-opacity-10 text-success p-2 rounded-3"><i class="bi bi-check-circle-fill fs-6"></i></span>
+            </div>
+            <div class="fs-3 fw-bold text-success mb-1">{{ metrics.active_products }}개</div>
+            <div class="very-small text-muted">
+                전체 등록 상품 대비 <strong>{% if metrics.total_products > 0 %}{{ (metrics.active_products / metrics.total_products * 100)|round|int }}%{% else %}0%{% endif %}</strong> 활성화
+            </div>
+        </div>
+    </div>
+
+    <!-- 전체 주문 수 -->
+    <div class="col-12 col-sm-6 col-xl-3">
+        <div class="admin-card p-3 h-100 mb-0">
+            <div class="d-flex align-items-center justify-content-between mb-2">
+                <span class="text-muted small fw-semibold">전체 주문 건수</span>
+                <span class="badge bg-info bg-opacity-10 text-info p-2 rounded-3"><i class="bi bi-receipt fs-6"></i></span>
+            </div>
+            <div class="fs-3 fw-bold text-dark mb-1">{{ metrics.total_orders }}건</div>
+            <div class="very-small text-muted">
+                신규 결제완료: <strong class="text-primary">{{ metrics.orders_by_status.get('PAID', 0) }}</strong>건
+            </div>
+        </div>
+    </div>
+
+    <!-- 누적 매출액 (집계 기준 명시) -->
+    <div class="col-12 col-sm-6 col-xl-3">
+        <div class="admin-card p-3 h-100 mb-0">
+            <div class="d-flex align-items-center justify-content-between mb-2">
+                <span class="text-muted small fw-semibold">총 누적 매출</span>
+                <span class="badge bg-danger bg-opacity-10 text-danger p-2 rounded-3"><i class="bi bi-currency-dollar fs-6"></i></span>
+            </div>
+            <div class="fs-3 fw-bold text-danger mb-1">{{ "{:,}".format(metrics.total_revenue) }}원</div>
+            <div class="very-small text-muted" title="결제 완료(PAID, PREPARING, SHIPPING, DELIVERED) 상태의 실결제액 합계">
+                <i class="bi bi-info-circle me-1"></i>결제 완료 주문 기준
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 2. 주문 상태별 진행 현황 바 -->
+<div class="admin-card p-3 mb-4">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h6 class="fw-bold mb-0 text-dark small"><i class="bi bi-funnel-fill text-muted me-1"></i>주문 처리 단계별 현황</h6>
+        <a href="{{ url_for('admin.order_list') }}" class="very-small text-decoration-none fw-semibold">주문 관리 전체보기 &rarr;</a>
+    </div>
+    <div class="row g-2 text-center">
+        <div class="col-6 col-sm-4 col-md-2">
+            <div class="p-2 rounded-3 bg-light border border-light-subtle">
+                <div class="very-small text-muted">결제 완료</div>
+                <div class="fs-5 fw-bold text-primary">{{ metrics.orders_by_status.get('PAID', 0) }}</div>
+            </div>
+        </div>
+        <div class="col-6 col-sm-4 col-md-2">
+            <div class="p-2 rounded-3 bg-light border border-light-subtle">
+                <div class="very-small text-muted">배송 준비 중</div>
+                <div class="fs-5 fw-bold text-warning">{{ metrics.orders_by_status.get('PREPARING', 0) }}</div>
+            </div>
+        </div>
+        <div class="col-6 col-sm-4 col-md-2">
+            <div class="p-2 rounded-3 bg-light border border-light-subtle">
+                <div class="very-small text-muted">배송 중</div>
+                <div class="fs-5 fw-bold text-info">{{ metrics.orders_by_status.get('SHIPPING', 0) }}</div>
+            </div>
+        </div>
+        <div class="col-6 col-sm-4 col-md-2">
+            <div class="p-2 rounded-3 bg-light border border-light-subtle">
+                <div class="very-small text-muted">배송 완료</div>
+                <div class="fs-5 fw-bold text-success">{{ metrics.orders_by_status.get('DELIVERED', 0) }}</div>
+            </div>
+        </div>
+        <div class="col-6 col-sm-4 col-md-2">
+            <div class="p-2 rounded-3 bg-light border border-light-subtle">
+                <div class="very-small text-muted">주문 취소</div>
+                <div class="fs-5 fw-bold text-secondary">{{ metrics.orders_by_status.get('CANCELLED', 0) }}</div>
+            </div>
+        </div>
+        <div class="col-6 col-sm-4 col-md-2">
+            <div class="p-2 rounded-3 bg-light border border-light-subtle">
+                <div class="very-small text-muted">입금 대기</div>
+                <div class="fs-5 fw-bold text-dark">{{ metrics.orders_by_status.get('PENDING_PAYMENT', 0) }}</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 3. 최근 주문 내역 & 최근 상품 내역 2열 그리드 -->
+<div class="row g-4">
+    <!-- 최근 주문 5건 -->
+    <div class="col-12 col-xl-7">
+        <div class="admin-card h-100 mb-0">
+            <div class="admin-card-header">
+                <div class="d-flex align-items-center gap-2">
+                    <i class="bi bi-clock-history text-coral"></i>
+                    <h2 class="admin-card-title">최근 접수된 주문</h2>
+                </div>
+                <a href="{{ url_for('admin.order_list') }}" class="btn btn-outline-secondary btn-sm rounded-pill px-3 very-small">
+                    전체 보기
+                </a>
+            </div>
+
+            {% if recent_orders %}
+            <div class="table-responsive">
+                <table class="table admin-table mb-0 align-middle">
+                    <thead>
+                        <tr>
+                            <th>주문번호</th>
+                            <th>수령인</th>
+                            <th>결제금액</th>
+                            <th>상태</th>
+                            <th class="text-end">관리</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for ord in recent_orders %}
+                        <tr>
+                            <td>
+                                <div class="fw-bold text-dark font-monospace small">{{ ord.order_number }}</div>
+                                <div class="very-small text-muted">{{ (ord.created_at or '')[:16]|replace('T', ' ') }}</div>
+                            </td>
+                            <td>
+                                <span class="fw-semibold">{{ ord.recipient_name or '고객' }}</span>
+                            </td>
+                            <td>
+                                <span class="fw-bold text-coral">{{ "{:,}".format((ord.payment_amount or ord.total_amount or 0)|int) }}원</span>
+                            </td>
+                            <td>
+                                {% set st = ord.status|upper %}
+                                {% if st == 'PAID' %}
+                                    <span class="badge bg-primary badge-status">결제 완료</span>
+                                {% elif st == 'PREPARING' %}
+                                    <span class="badge bg-warning text-dark badge-status">배송 준비</span>
+                                {% elif st == 'SHIPPING' %}
+                                    <span class="badge bg-info text-dark badge-status">배송 중</span>
+                                {% elif st == 'DELIVERED' %}
+                                    <span class="badge bg-success badge-status">배송 완료</span>
+                                {% elif st == 'CANCELLED' %}
+                                    <span class="badge bg-secondary badge-status">주문 취소</span>
+                                {% else %}
+                                    <span class="badge bg-light text-dark border badge-status">{{ st }}</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-end">
+                                <a href="{{ url_for('admin.order_detail', order_id=ord.id) }}" class="btn btn-sm btn-outline-dark rounded-pill px-3 very-small">
+                                    상세보기
+                                </a>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="p-5 text-center text-muted">
+                <i class="bi bi-inbox fs-1 d-block mb-2 text-muted opacity-50"></i>
+                <div class="fw-semibold">최근 접수된 주문 내역이 없습니다.</div>
+                <div class="very-small mt-1">쇼핑몰에서 주문이 생성되면 이곳에 실시간으로 표시됩니다.</div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- 최근 등록 상품 5개 -->
+    <div class="col-12 col-xl-5">
+        <div class="admin-card h-100 mb-0">
+            <div class="admin-card-header">
+                <div class="d-flex align-items-center gap-2">
+                    <i class="bi bi-box-seam text-coral"></i>
+                    <h2 class="admin-card-title">등록 상품 현황</h2>
+                </div>
+                <a href="{{ url_for('admin.product_new') }}" class="btn btn-coral btn-sm rounded-pill px-3 very-small">
+                    + 상품 등록
+                </a>
+            </div>
+
+            {% if recent_products %}
+            <div class="table-responsive">
+                <table class="table admin-table mb-0 align-middle">
+                    <thead>
+                        <tr>
+                            <th>상품명</th>
+                            <th>가격</th>
+                            <th>재고</th>
+                            <th>상태</th>
+                            <th class="text-end">관리</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for prod in recent_products %}
+                        <tr>
+                            <td>
+                                <div class="fw-bold text-dark text-truncate small" style="max-width: 140px;">{{ prod.name }}</div>
+                            </td>
+                            <td>
+                                <span class="fw-semibold small">{{ "{:,}".format((prod.price or 0)|int) }}원</span>
+                            </td>
+                            <td>
+                                {% if (prod.stock or 0) > 0 %}
+                                    <span class="badge bg-light text-dark border very-small">{{ prod.stock }}개</span>
+                                {% else %}
+                                    <span class="badge bg-danger very-small">품절</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if prod.is_active %}
+                                    <span class="badge bg-success bg-opacity-10 text-success very-small fw-semibold">판매중</span>
+                                {% else %}
+                                    <span class="badge bg-secondary bg-opacity-10 text-secondary very-small fw-semibold">판매중지</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-end">
+                                <a href="{{ url_for('admin.product_edit', product_id=prod.id) }}" class="btn btn-sm btn-outline-secondary rounded-pill px-2 very-small">
+                                    수정
+                                </a>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="p-5 text-center text-muted">
+                <i class="bi bi-bag-x fs-1 d-block mb-2 text-muted opacity-50"></i>
+                <div class="fw-semibold">등록된 상품이 없습니다.</div>
+                <a href="{{ url_for('admin.product_new') }}" class="btn btn-coral btn-sm rounded-pill mt-3 px-3">
+                    첫 번째 상품 등록하기
+                </a>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

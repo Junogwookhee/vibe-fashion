@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}VIBE-FASHION 관리자{% endblock %}</title>
+
+    <!-- Google Fonts: Plus Jakarta Sans, Noto Sans KR -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" rel="stylesheet">
+
+    <!-- Bootstrap 5.3 CDN CSS & Icons -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+
+    <!-- 관리자 전용 스타일 (기존 쇼핑몰 CSS와 격리) -->
+    <style>
+        :root {
+            --admin-bg: #f8fafc;
+            --admin-surface: #ffffff;
+            --admin-sidebar-bg: #0f172a;
+            --admin-sidebar-text: #94a3b8;
+            --admin-sidebar-active: #ffffff;
+            --admin-sidebar-active-bg: #1e293b;
+            --admin-border: #e2e8f0;
+            --admin-text-main: #0f172a;
+            --admin-text-muted: #64748b;
+            --admin-coral: #f43f5e;
+            --admin-coral-hover: #e11d48;
+        }
+
+        body.admin-body {
+            font-family: 'Plus Jakarta Sans', 'Noto Sans KR', -apple-system, BlinkMacSystemFont, sans-serif;
+            background-color: var(--admin-bg);
+            color: var(--admin-text-main);
+            margin: 0;
+            padding: 0;
+            overflow-x: hidden;
+        }
+
+        /* 레이아웃 구조 */
+        .admin-wrapper {
+            display: flex;
+            min-height: 100vh;
+            width: 100%;
+        }
+
+        /* 좌측 사이드바 */
+        .admin-sidebar {
+            width: 260px;
+            background-color: var(--admin-sidebar-bg);
+            color: var(--admin-sidebar-text);
+            display: flex;
+            flex-direction: column;
+            flex-shrink: 0;
+            transition: all 0.25s ease-in-out;
+            z-index: 1040;
+        }
+
+        .admin-sidebar-brand {
+            padding: 1.5rem 1.25rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            text-decoration: none;
+            color: #ffffff;
+        }
+
+        .admin-brand-logo {
+            width: 34px;
+            height: 34px;
+            background: linear-gradient(135deg, var(--admin-coral), #fb7185);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #ffffff;
+            font-size: 1.1rem;
+        }
+
+        .admin-brand-title {
+            font-weight: 800;
+            font-size: 1.05rem;
+            letter-spacing: 0.5px;
+            margin: 0;
+        }
+
+        .admin-brand-sub {
+            font-size: 0.65rem;
+            color: #f43f5e;
+            letter-spacing: 1.5px;
+            font-weight: 700;
+            display: block;
+        }
+
+        .admin-sidebar-menu {
+            padding: 1rem 0.75rem;
+            list-style: none;
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 0.35rem;
+            flex-grow: 1;
+        }
+
+        .admin-menu-link {
+            display: flex;
+            align-items: center;
+            gap: 0.85rem;
+            padding: 0.75rem 1rem;
+            color: var(--admin-sidebar-text);
+            text-decoration: none;
+            border-radius: 8px;
+            font-size: 0.92rem;
+            font-weight: 500;
+            transition: all 0.15s ease;
+        }
+
+        .admin-menu-link i {
+            font-size: 1.15rem;
+            width: 22px;
+            text-align: center;
+        }
+
+        .admin-menu-link:hover {
+            color: #ffffff;
+            background-color: rgba(255, 255, 255, 0.05);
+        }
+
+        .admin-menu-link.active {
+            color: var(--admin-sidebar-active);
+            background-color: var(--admin-sidebar-active-bg);
+            font-weight: 600;
+            box-shadow: inset 3px 0 0 var(--admin-coral);
+        }
+
+        .admin-sidebar-footer {
+            padding: 1rem 1.25rem;
+            border-top: 1px solid rgba(255, 255, 255, 0.08);
+            font-size: 0.8rem;
+        }
+
+        /* 우측 메인 영역 */
+        .admin-main {
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+            background-color: var(--admin-bg);
+        }
+
+        /* 상단 네비게이션 바 */
+        .admin-header {
+            background-color: #ffffff;
+            border-bottom: 1px solid var(--admin-border);
+            padding: 0.85rem 1.75rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            position: sticky;
+            top: 0;
+            z-index: 1020;
+        }
+
+        .admin-header-title {
+            font-weight: 700;
+            font-size: 1.15rem;
+            margin: 0;
+            color: var(--admin-text-main);
+        }
+
+        .admin-content {
+            padding: 1.75rem;
+            flex-grow: 1;
+        }
+
+        /* 카드 및 테이블 스타일 */
+        .admin-card {
+            background-color: #ffffff;
+            border: 1px solid var(--admin-border);
+            border-radius: 12px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+            overflow: hidden;
+            margin-bottom: 1.5rem;
+        }
+
+        .admin-card-header {
+            padding: 1rem 1.25rem;
+            border-bottom: 1px solid var(--admin-border);
+            background-color: #ffffff;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .admin-card-title {
+            font-size: 1rem;
+            font-weight: 700;
+            margin: 0;
+            color: var(--admin-text-main);
+        }
+
+        .admin-table th {
+            font-size: 0.82rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--admin-text-muted);
+            background-color: #f8fafc;
+            border-bottom: 1px solid var(--admin-border);
+            padding: 0.85rem 1rem;
+            vertical-align: middle;
+        }
+
+        .admin-table td {
+            font-size: 0.9rem;
+            padding: 0.95rem 1rem;
+            vertical-align: middle;
+            border-bottom: 1px solid #f1f5f9;
+        }
+
+        .admin-table tbody tr:hover {
+            background-color: #f8fafc;
+        }
+
+        .btn-coral {
+            background-color: var(--admin-coral);
+            border-color: var(--admin-coral);
+            color: #ffffff;
+            font-weight: 600;
+        }
+
+        .btn-coral:hover {
+            background-color: var(--admin-coral-hover);
+            border-color: var(--admin-coral-hover);
+            color: #ffffff;
+        }
+
+        .badge-status {
+            font-weight: 600;
+            padding: 0.35em 0.65em;
+            border-radius: 6px;
+            font-size: 0.78rem;
+        }
+
+        /* 반응형 모바일/태블릿 */
+        @media (max-width: 991.98px) {
+            .admin-sidebar {
+                position: fixed;
+                top: 0;
+                bottom: 0;
+                left: -260px;
+            }
+            .admin-sidebar.show {
+                left: 0;
+            }
+            .admin-content {
+                padding: 1rem;
+            }
+        }
+    </style>
+    {% block extra_css %}{% endblock %}
+</head>
+<body class="admin-body">
+
+    <div class="admin-wrapper">
+        <!-- 왼쪽 사이드바 (공통 메뉴: 대시보드, 상품 관리, 주문 관리) -->
+        <nav class="admin-sidebar" id="adminSidebar" aria-label="관리자 메뉴">
+            <a href="{{ url_for('admin.dashboard') }}" class="admin-sidebar-brand">
+                <div class="admin-brand-logo">
+                    <i class="bi bi-shield-lock-fill"></i>
+                </div>
+                <div>
+                    <div class="admin-brand-title">VIBE-FASHION</div>
+                    <span class="admin-brand-sub">ADMIN CONSOLE</span>
+                </div>
+            </a>
+
+            <ul class="admin-sidebar-menu">
+                <li>
+                    <a href="{{ url_for('admin.dashboard') }}" class="admin-menu-link {% if active_menu == 'dashboard' %}active{% endif %}">
+                        <i class="bi bi-grid-1x2-fill"></i>
+                        <span>대시보드</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="{{ url_for('admin.product_list') }}" class="admin-menu-link {% if active_menu == 'products' %}active{% endif %}">
+                        <i class="bi bi-tag-fill"></i>
+                        <span>상품 관리</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="{{ url_for('admin.order_list') }}" class="admin-menu-link {% if active_menu == 'orders' %}active{% endif %}">
+                        <i class="bi bi-receipt"></i>
+                        <span>주문 관리</span>
+                    </a>
+                </li>
+            </ul>
+
+            <div class="admin-sidebar-footer">
+                <div class="text-white-50 very-small mb-2">접속 관리자</div>
+                <div class="text-white fw-semibold text-truncate small mb-2">
+                    <i class="bi bi-person-circle me-1 text-danger"></i>
+                    {{ current_admin.get('email') or current_admin.get('full_name') or '관리자' }}
+                </div>
+                <a href="{{ url_for('main.index') }}" class="btn btn-outline-light btn-sm w-100 rounded-2 py-1 very-small" target="_blank">
+                    <i class="bi bi-shop me-1"></i>쇼핑몰 바로가기
+                </a>
+            </div>
+        </nav>
+
+        <!-- 오른쪽 메인 영역 -->
+        <div class="admin-main">
+            <!-- 상단 헤더 -->
+            <header class="admin-header">
+                <div class="d-flex align-items-center gap-3">
+                    <button class="btn btn-light d-lg-none p-1 px-2 border" type="button" id="sidebarToggle" aria-label="메뉴 열기">
+                        <i class="bi bi-list fs-5"></i>
+                    </button>
+                    <h1 class="admin-header-title">{% block page_title %}관리자 콘솔{% endblock %}</h1>
+                </div>
+
+                <div class="d-flex align-items-center gap-2">
+                    <a href="{{ url_for('main.index') }}" class="btn btn-light btn-sm rounded-pill px-3 border d-none d-sm-inline-flex align-items-center gap-1">
+                        <i class="bi bi-arrow-up-right-circle text-muted"></i>
+                        <span>쇼핑몰 바로가기</span>
+                    </a>
+                    <a href="{{ url_for('auth.logout') }}" class="btn btn-outline-danger btn-sm rounded-pill px-3 d-inline-flex align-items-center gap-1">
+                        <i class="bi bi-box-arrow-right"></i>
+                        <span>로그아웃</span>
+                    </a>
+                </div>
+            </header>
+
+            <!-- 본문 영역 및 알림 메시지 -->
+            <main class="admin-content">
+                <!-- 플래시 메시지 -->
+                {% with messages = get_flashed_messages(with_categories=true) %}
+                    {% if messages %}
+                        {% for category, message in messages %}
+                            <div class="alert alert-{{ category if category != 'error' else 'danger' }} alert-dismissible fade show rounded-3 border-0 shadow-sm mb-3 d-flex align-items-center justify-content-between" role="alert">
+                                <div>
+                                    {% if category == 'success' %}
+                                        <i class="bi bi-check-circle-fill text-success me-2"></i>
+                                    {% elif category == 'danger' or category == 'error' %}
+                                        <i class="bi bi-exclamation-triangle-fill text-danger me-2"></i>
+                                    {% else %}
+                                        <i class="bi bi-info-circle-fill text-primary me-2"></i>
+                                    {% endif %}
+                                    <span>{{ message }}</span>
+                                </div>
+                                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="닫기"></button>
+                            </div>
+                        {% endfor %}
+                    {% endif %}
+                {% endwith %}
+
+                {% block content %}{% endblock %}
+            </main>
+        </div>
+    </div>
+
+    <!-- Bootstrap 5.3 CDN JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
+    <script>
+        // 모바일 사이드바 토글 인터랙션
+        const sidebarToggle = document.getElementById('sidebarToggle');
+        const adminSidebar = document.getElementById('adminSidebar');
+        if (sidebarToggle && adminSidebar) {
+            sidebarToggle.addEventListener('click', () => {
+                adminSidebar.classList.toggle('show');
+            });
+            // 본문 클릭 시 사이드바 닫기
+            document.querySelector('.admin-main').addEventListener('click', () => {
+                if (window.innerWidth < 992 && adminSidebar.classList.contains('show')) {
+                    adminSidebar.classList.remove('show');
+                }
+            });
+        }
+    </script>
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>관리자 권한 필요 | VIBE-FASHION</title>
+    <!-- Google Fonts & Bootstrap 5.3 -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@600;700&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    <style>
+        body {
+            background-color: #0f172a;
+            color: #f8fafc;
+            font-family: 'Plus Jakarta Sans', 'Noto Sans KR', sans-serif;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 1.5rem;
+        }
+        .access-card {
+            background-color: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 16px;
+            max-width: 580px;
+            width: 100%;
+            padding: 2.5rem;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+        }
+        .code-box {
+            background-color: #0b1120;
+            border: 1px solid #1e293b;
+            border-radius: 8px;
+            padding: 1rem;
+            font-family: SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+            font-size: 0.85rem;
+            color: #38bdf8;
+            overflow-x: auto;
+        }
+    </style>
+</head>
+<body>
+    <div class="access-card text-center">
+        <div class="d-inline-flex align-items-center justify-content-center mb-3" style="width: 64px; height: 64px; border-radius: 50%; background: rgba(244, 63, 94, 0.15); color: #f43f5e;">
+            <i class="bi bi-shield-lock-fill fs-2"></i>
+        </div>
+
+        <span class="badge bg-danger rounded-pill px-3 py-1 small fw-bold mb-3">ACCESS DENIED (403)</span>
+        <h2 class="fw-bold mb-2">관리자 권한이 필요합니다</h2>
+        <p class="text-white-50 small mb-4">
+            현재 로그인된 계정은 일반 회원 권한(role='customer')으로 설정되어 있어 관리자 콘솔에 접근할 수 없습니다.
+        </p>
+
+        {% if user_email %}
+        <div class="p-3 mb-4 rounded-3 text-start" style="background-color: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1);">
+            <div class="very-small text-white-50">현재 로그인 계정</div>
+            <div class="fw-bold text-white small"><i class="bi bi-person-fill me-1 text-danger"></i>{{ user_email }}</div>
+        </div>
+        {% endif %}
+
+        <!-- 최초 관리자 지정 절차 안내 -->
+        <div class="text-start mb-4">
+            <h6 class="fw-bold text-white small d-flex align-items-center gap-1 mb-2">
+                <i class="bi bi-info-circle-fill text-info"></i>
+                <span>관리자 계정 부여 안내 (DB 관리자 전용)</span>
+            </h6>
+            <p class="text-white-50 very-small mb-2">
+                보안을 위해 공개 관리자 가입 기능이나 기본 비밀번호는 제공되지 않습니다. 관리자 권한은 <strong>Supabase Dashboard > SQL Editor</strong>에서 아래 쿼리를 1회 실행하여 직접 지정할 수 있습니다:
+            </p>
+            <div class="code-box text-start mb-2">
+UPDATE public.profiles<br>
+SET role = 'admin'<br>
+WHERE email = '{{ user_email or "관리자_이메일" }}';
+            </div>
+            <div class="very-small text-white-50">
+                * 권한 부여 후 페이지를 새로고침하면 관리자 콘솔로 즉시 진입됩니다.
+            </div>
+        </div>
+
+        <!-- 하단 액션 버튼 -->
+        <div class="d-flex gap-2 justify-content-center">
+            <a href="{{ url_for('main.index') }}" class="btn btn-outline-light rounded-pill px-4 py-2 small fw-semibold flex-grow-1">
+                <i class="bi bi-shop me-1"></i>쇼핑몰 홈으로
+            </a>
+            <a href="{{ url_for('auth.logout') }}" class="btn btn-danger rounded-pill px-4 py-2 small fw-bold flex-grow-1">
+                <i class="bi bi-box-arrow-right me-1"></i>다른 계정으로 로그인
+            </a>
+        </div>
+    </div>
+</body>
+</html>

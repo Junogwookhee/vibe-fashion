@@ -53,6 +53,7 @@ ERROR_MESSAGES = {
     'missing_fields': '필수 입력 항목을 모두 작성해주세요.',
     'token_invalid': '인증 링크가 유효하지 않거나 만료되었습니다. 다시 시도해주세요.',
     'reset_failed': '비밀번호 재설정에 실패했습니다. 다시 시도해주세요.',
+    'email_send_failed': '메일 발송에 실패했습니다. 잠시 후 다시 시도해주세요.',
     'unknown_error': '요청 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.'
 }
 
@@ -109,21 +110,25 @@ def login():
             user = auth_res.user
             session['user_id'] = user.id
             full_name = None
+            role = 'customer'
             if user.user_metadata:
                 full_name = user.user_metadata.get('full_name')
 
-            if not full_name:
-                try:
-                    prof = supabase.table('profiles').select('full_name').eq('id', user.id).execute().data
-                    if prof and prof[0].get('full_name'):
+            try:
+                prof = supabase.table('profiles').select('full_name, role').eq('id', user.id).execute().data
+                if prof:
+                    if prof[0].get('full_name'):
                         full_name = prof[0].get('full_name')
-                except Exception:
-                    pass
+                    role = prof[0].get('role') or 'customer'
+            except Exception:
+                pass
 
+            session['is_admin'] = (role == 'admin')
             session['user'] = {
                 'id': user.id,
                 'email': user.email,
-                'full_name': full_name or user.email.split('@')[0]
+                'full_name': full_name or user.email.split('@')[0],
+                'role': role
             }
 
             if auth_res.session:
@@ -334,23 +339,25 @@ def forgot_password():
             'options': {'redirect_to': redirect_url}
         })
 
+        if not rec_res or not rec_res.properties:
+            logger.error("[Forgot Password Error] Supabase에서 재설정 링크를 생성하지 못했습니다.")
+            return redirect(url_for('auth.forgot_password', error='unknown_error'))
+
         if rec_res and rec_res.properties:
             reset_link = rec_res.properties.action_link
-            print(f"\n========================================================")
-            print(f"[VIBE Auth] 🔑 '{email}' 님을 위한 비밀번호 재설정 링크:")
-            print(f"{reset_link}")
-            print(f"========================================================\n")
 
             user_name = "고객"
             if rec_res.user and rec_res.user.user_metadata:
                 user_name = rec_res.user.user_metadata.get('full_name', '고객')
 
             html_body = build_password_reset_email(user_name, reset_link)
-            send_email_via_gmail_smtp(
+            sent = send_email_via_gmail_smtp(
                 to_email=email,
                 subject="[VIBE-FASHION] 비밀번호 재설정 안내",
                 html_content=html_body
             )
+            if not sent:
+                return redirect(url_for('auth.forgot_password', error='email_send_failed', email=email))
 
         return redirect(url_for('auth.forgot_password', success='email_sent', email=email))
 

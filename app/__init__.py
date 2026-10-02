@@ -22,7 +22,9 @@ def create_app():
     # routes 폴더에서 블루프린트 가져와 등록하기
     from .routes.main import main_bp
     from .routes.auth import auth_bp
+    from .routes.admin import admin_bp
     app.register_blueprint(main_bp)
     app.register_blueprint(auth_bp)
+    app.register_blueprint(admin_bp)
 
     return app

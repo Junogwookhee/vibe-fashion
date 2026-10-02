@@ -1,0 +1,205 @@
+{% extends 'admin/base.html' %}
+
+{% block title %}상품 관리 | VIBE-FASHION 관리자{% endblock %}
+{% block page_title %}상품 관리{% endblock %}
+
+{% block content %}
+<!-- 상단 헤더 및 신규 상품 등록 버튼 -->
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4">
+    <div>
+        <h4 class="fw-bold mb-1">등록 상품 목록</h4>
+        <p class="text-muted small mb-0">쇼핑몰에 진열되는 상품의 가격, 재고, 옵션 및 판매 상태를 관리합니다.</p>
+    </div>
+    <a href="{{ url_for('admin.product_new') }}" class="btn btn-coral rounded-pill px-4 py-2 d-inline-flex align-items-center gap-2 shadow-sm">
+        <i class="bi bi-plus-lg"></i>
+        <span>신규 상품 등록</span>
+    </a>
+</div>
+
+<!-- 검색 및 필터 바 -->
+<div class="admin-card p-3 mb-4">
+    <form method="GET" action="{{ url_for('admin.product_list') }}" class="row g-2 align-items-center">
+        <!-- 검색어 (상품명 / 슬러그) -->
+        <div class="col-12 col-md-4">
+            <div class="input-group input-group-sm">
+                <span class="input-group-text bg-white border-end-0 text-muted"><i class="bi bi-search"></i></span>
+                <input type="text" name="q" class="form-control border-start-0" placeholder="상품명 또는 슬러그 검색" value="{{ query_text }}">
+            </div>
+        </div>
+
+        <!-- 카테고리 필터 -->
+        <div class="col-6 col-md-3">
+            <select name="category" class="form-select form-select-sm">
+                <option value="">전체 카테고리</option>
+                {% for cat in categories %}
+                    <option value="{{ cat.id }}" {% if category_id == (cat.id|string) %}selected{% endif %}>{{ cat.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <!-- 판매 상태 필터 -->
+        <div class="col-6 col-md-3">
+            <select name="status" class="form-select form-select-sm">
+                <option value="">전체 상태</option>
+                <option value="active" {% if status_filter == 'active' %}selected{% endif %}>판매 중</option>
+                <option value="inactive" {% if status_filter == 'inactive' %}selected{% endif %}>판매 중지 (보관)</option>
+                <option value="out_of_stock" {% if status_filter == 'out_of_stock' %}selected{% endif %}>품절 상품</option>
+            </select>
+        </div>
+
+        <!-- 필터 적용 및 초기화 버튼 -->
+        <div class="col-12 col-md-2 d-flex gap-2">
+            <button type="submit" class="btn btn-dark btn-sm rounded-3 flex-grow-1">필터 적용</button>
+            {% if query_text or category_id or status_filter %}
+                <a href="{{ url_for('admin.product_list') }}" class="btn btn-outline-secondary btn-sm rounded-3" title="초기화">
+                    <i class="bi bi-arrow-counterclockwise"></i>
+                </a>
+            {% endif %}
+        </div>
+    </form>
+</div>
+
+<!-- 상품 목록 테이블 -->
+<div class="admin-card mb-4">
+    <div class="admin-card-header">
+        <span class="small text-muted">
+            검색 결과: 총 <strong class="text-dark">{{ total_count }}</strong>개 상품 ({{ page }}/{{ total_pages }} 페이지)
+        </span>
+    </div>
+
+    {% if products %}
+    <div class="table-responsive">
+        <table class="table admin-table mb-0 align-middle">
+            <thead>
+                <tr>
+                    <th style="width: 70px;">이미지</th>
+                    <th>상품 정보</th>
+                    <th>카테고리</th>
+                    <th>가격</th>
+                    <th>재고 / 옵션</th>
+                    <th>판매 상태</th>
+                    <th class="text-end" style="width: 220px;">관리</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for prod in products %}
+                <tr>
+                    <td>
+                        {% if prod.thumbnail_url %}
+                            <img src="{{ prod.thumbnail_url }}" alt="{{ prod.name }}" class="rounded-3 object-fit-cover border" style="width: 52px; height: 60px;">
+                        {% else %}
+                            <div class="bg-light rounded-3 d-flex align-items-center justify-content-center text-muted border" style="width: 52px; height: 60px;">
+                                <i class="bi bi-image fs-5"></i>
+                            </div>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <div class="d-flex align-items-center gap-2">
+                            <span class="fw-bold text-dark small">{{ prod.name }}</span>
+                            {% if prod.is_featured %}
+                                <span class="badge bg-warning text-dark very-small">추천</span>
+                            {% endif %}
+                        </div>
+                        <div class="very-small text-muted font-monospace mt-1">
+                            slug: {{ prod.slug or '-' }}
+                        </div>
+                    </td>
+                    <td>
+                        <span class="badge bg-light text-dark border very-small">
+                            {{ (prod.categories or {}).get('name') or '미지정' }}
+                        </span>
+                    </td>
+                    <td>
+                        {% if prod.sale_price and prod.sale_price < prod.price %}
+                            <div class="fw-bold text-coral small">{{ "{:,}".format(prod.sale_price|int) }}원</div>
+                            <div class="very-small text-muted text-decoration-line-through">{{ "{:,}".format(prod.price|int) }}원</div>
+                        {% else %}
+                            <div class="fw-bold text-dark small">{{ "{:,}".format(prod.price|int) }}원</div>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <div>
+                            {% if (prod.stock or 0) > 0 %}
+                                <strong class="text-dark small">{{ prod.stock }}</strong><span class="very-small text-muted">개</span>
+                            {% else %}
+                                <span class="badge bg-danger very-small">품절</span>
+                            {% endif %}
+                        </div>
+                        <div class="very-small text-muted mt-1">
+                            옵션 <strong class="text-primary">{{ prod.options_count or 0 }}</strong>개 등록됨
+                        </div>
+                    </td>
+                    <td>
+                        {% if prod.is_active %}
+                            <span class="badge bg-success bg-opacity-10 text-success badge-status">
+                                <i class="bi bi-check-circle me-1"></i>판매 중
+                            </span>
+                        {% else %}
+                            <span class="badge bg-secondary bg-opacity-10 text-secondary badge-status">
+                                <i class="bi bi-pause-circle me-1"></i>판매 중지
+                            </span>
+                        {% endif %}
+                    </td>
+                    <td class="text-end">
+                        <div class="d-inline-flex gap-1">
+                            <!-- 수정 버튼 -->
+                            <a href="{{ url_for('admin.product_edit', product_id=prod.id) }}" class="btn btn-outline-dark btn-sm rounded-2 py-1 px-2 very-small" title="상품 정보 수정">
+                                <i class="bi bi-pencil-square me-1"></i>수정
+                            </a>
+
+                            <!-- 판매 상태 토글 버튼 (POST + CSRF) -->
+                            <form method="POST" action="{{ url_for('admin.product_toggle_status', product_id=prod.id) }}" class="d-inline">
+                                <input type="hidden" name="csrf_token" value="{{ admin_csrf_token }}">
+                                <button type="submit" class="btn btn-outline-secondary btn-sm rounded-2 py-1 px-2 very-small" title="판매 상태 전환">
+                                    {% if prod.is_active %}중지{% else %}판매{% endif %}
+                                </button>
+                            </form>
+
+                            <!-- 삭제/보관 버튼 (주문 연결 시 자동 보관 처리) -->
+                            <form method="POST" action="{{ url_for('admin.product_delete', product_id=prod.id) }}" class="d-inline" onsubmit="return confirm('해당 상품을 삭제하시겠습니까?\n(기존 주문 내역이 있는 경우 데이터 훼손 방지를 위해 영구 삭제 대신 [판매 중지] 처리됩니다.)');">
+                                <input type="hidden" name="csrf_token" value="{{ admin_csrf_token }}">
+                                <button type="submit" class="btn btn-outline-danger btn-sm rounded-2 py-1 px-2 very-small" title="상품 삭제 또는 보관">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </form>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- 페이지네이션 컨트롤 -->
+    {% if total_pages > 1 %}
+    <div class="p-3 border-top d-flex justify-content-center">
+        <nav aria-label="상품 페이지 네비게이션">
+            <ul class="pagination pagination-sm mb-0">
+                <li class="page-item {% if page <= 1 %}disabled{% endif %}">
+                    <a class="page-link" href="{{ url_for('admin.product_list', page=page-1, q=query_text, category=category_id, status=status_filter) }}">이전</a>
+                </li>
+                {% for p in range(1, total_pages + 1) %}
+                    <li class="page-item {% if p == page %}active{% endif %}">
+                        <a class="page-link" href="{{ url_for('admin.product_list', page=p, q=query_text, category=category_id, status=status_filter) }}">{{ p }}</a>
+                    </li>
+                {% endfor %}
+                <li class="page-item {% if page >= total_pages %}disabled{% endif %}">
+                    <a class="page-link" href="{{ url_for('admin.product_list', page=page+1, q=query_text, category=category_id, status=status_filter) }}">다음</a>
+                </li>
+            </ul>
+        </nav>
+    </div>
+    {% endif %}
+
+    {% else %}
+    <div class="p-5 text-center text-muted">
+        <i class="bi bi-search fs-1 d-block mb-2 text-muted opacity-50"></i>
+        <div class="fw-semibold">조건에 맞는 상품을 찾을 수 없습니다.</div>
+        <p class="very-small mt-1 text-muted">검색어나 필터 조건을 변경하여 다시 시도해보세요.</p>
+        <a href="{{ url_for('admin.product_list') }}" class="btn btn-outline-secondary btn-sm rounded-pill mt-2">
+            필터 초기화
+        </a>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

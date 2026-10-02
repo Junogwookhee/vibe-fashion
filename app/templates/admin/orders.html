@@ -1,0 +1,154 @@
+{% extends 'admin/base.html' %}
+
+{% block title %}주문 관리 | VIBE-FASHION 관리자{% endblock %}
+{% block page_title %}주문 관리{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4">
+    <div>
+        <h4 class="fw-bold mb-1">고객 주문 내역</h4>
+        <p class="text-muted small mb-0">접수된 결제 건의 주문 상세를 확인하고 배송 준비, 배송 중, 배송 완료 등 상태를 관리합니다.</p>
+    </div>
+</div>
+
+<!-- 검색 및 상태 필터 바 -->
+<div class="admin-card p-3 mb-4">
+    <form method="GET" action="{{ url_for('admin.order_list') }}" class="row g-2 align-items-center">
+        <!-- 검색어 (주문번호 / 수령인 / 연락처) -->
+        <div class="col-12 col-md-5">
+            <div class="input-group input-group-sm">
+                <span class="input-group-text bg-white border-end-0 text-muted"><i class="bi bi-search"></i></span>
+                <input type="text" name="q" class="form-control border-start-0" placeholder="주문번호, 수령인 이름, 연락처 검색" value="{{ query_text }}">
+            </div>
+        </div>
+
+        <!-- 주문 상태 필터 -->
+        <div class="col-8 col-md-4">
+            <select name="status" class="form-select form-select-sm">
+                <option value="">전체 주문 상태</option>
+                <option value="PAID" {% if status_filter == 'PAID' %}selected{% endif %}>결제 완료 (신규 주문)</option>
+                <option value="PREPARING" {% if status_filter == 'PREPARING' %}selected{% endif %}>배송 준비 중</option>
+                <option value="SHIPPING" {% if status_filter == 'SHIPPING' %}selected{% endif %}>배송 중</option>
+                <option value="DELIVERED" {% if status_filter == 'DELIVERED' %}selected{% endif %}>배송 완료</option>
+                <option value="CANCELLED" {% if status_filter == 'CANCELLED' %}selected{% endif %}>주문 취소</option>
+                <option value="PENDING_PAYMENT" {% if status_filter == 'PENDING_PAYMENT' %}selected{% endif %}>입금 대기</option>
+            </select>
+        </div>
+
+        <!-- 필터 버튼 -->
+        <div class="col-4 col-md-3 d-flex gap-2">
+            <button type="submit" class="btn btn-dark btn-sm rounded-3 flex-grow-1">필터 적용</button>
+            {% if query_text or status_filter %}
+                <a href="{{ url_for('admin.order_list') }}" class="btn btn-outline-secondary btn-sm rounded-3" title="초기화">
+                    <i class="bi bi-arrow-counterclockwise"></i>
+                </a>
+            {% endif %}
+        </div>
+    </form>
+</div>
+
+<!-- 주문 목록 테이블 -->
+<div class="admin-card mb-4">
+    <div class="admin-card-header">
+        <span class="small text-muted">
+            주문 내역: 총 <strong class="text-dark">{{ total_count }}</strong>건 ({{ page }}/{{ total_pages }} 페이지)
+        </span>
+    </div>
+
+    {% if orders %}
+    <div class="table-responsive">
+        <table class="table admin-table mb-0 align-middle">
+            <thead>
+                <tr>
+                    <th>주문번호 / 일시</th>
+                    <th>수령인 정보</th>
+                    <th>주문 상품</th>
+                    <th>결제 금액</th>
+                    <th>결제 수단</th>
+                    <th>주문 상태</th>
+                    <th class="text-end" style="width: 120px;">관리</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for ord in orders %}
+                <tr>
+                    <td>
+                        <div class="fw-bold text-dark font-monospace small">{{ ord.order_number }}</div>
+                        <div class="very-small text-muted">{{ (ord.created_at or '')[:16]|replace('T', ' ') }}</div>
+                    </td>
+                    <td>
+                        <div class="fw-semibold text-dark small">{{ ord.recipient_name or '고객' }}</div>
+                        <div class="very-small text-muted">{{ ord.recipient_phone or '-' }}</div>
+                    </td>
+                    <td>
+                        <div class="fw-semibold text-dark small">{{ ord.summary_title or '주문 상품' }}</div>
+                        <div class="very-small text-muted">총 {{ ord.total_item_count or 1 }}개 수량</div>
+                    </td>
+                    <td>
+                        <div class="fw-bold text-coral small">{{ "{:,}".format((ord.payment_amount or ord.total_amount or 0)|int) }}원</div>
+                    </td>
+                    <td>
+                        <span class="very-small text-muted">{{ ord.payment_method or '신용/체크카드' }}</span>
+                    </td>
+                    <td>
+                        {% set st = ord.status|upper %}
+                        {% if st == 'PAID' %}
+                            <span class="badge bg-primary badge-status">결제 완료</span>
+                        {% elif st == 'PREPARING' %}
+                            <span class="badge bg-warning text-dark badge-status">배송 준비</span>
+                        {% elif st == 'SHIPPING' %}
+                            <span class="badge bg-info text-dark badge-status">배송 중</span>
+                        {% elif st == 'DELIVERED' %}
+                            <span class="badge bg-success badge-status">배송 완료</span>
+                        {% elif st == 'CANCELLED' %}
+                            <span class="badge bg-secondary badge-status">주문 취소</span>
+                        {% elif st == 'PENDING_PAYMENT' %}
+                            <span class="badge bg-light text-dark border badge-status">입금 대기</span>
+                        {% else %}
+                            <span class="badge bg-light text-dark border badge-status">{{ st }}</span>
+                        {% endif %}
+                    </td>
+                    <td class="text-end">
+                        <a href="{{ url_for('admin.order_detail', order_id=ord.id) }}" class="btn btn-outline-dark btn-sm rounded-pill px-3 very-small">
+                            상세보기
+                        </a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- 페이지네이션 컨트롤 -->
+    {% if total_pages > 1 %}
+    <div class="p-3 border-top d-flex justify-content-center">
+        <nav aria-label="주문 페이지 네비게이션">
+            <ul class="pagination pagination-sm mb-0">
+                <li class="page-item {% if page <= 1 %}disabled{% endif %}">
+                    <a class="page-link" href="{{ url_for('admin.order_list', page=page-1, q=query_text, status=status_filter) }}">이전</a>
+                </li>
+                {% for p in range(1, total_pages + 1) %}
+                    <li class="page-item {% if p == page %}active{% endif %}">
+                        <a class="page-link" href="{{ url_for('admin.order_list', page=p, q=query_text, status=status_filter) }}">{{ p }}</a>
+                    </li>
+                {% endfor %}
+                <li class="page-item {% if page >= total_pages %}disabled{% endif %}">
+                    <a class="page-link" href="{{ url_for('admin.order_list', page=page+1, q=query_text, status=status_filter) }}">다음</a>
+                </li>
+            </ul>
+        </nav>
+    </div>
+    {% endif %}
+
+    {% else %}
+    <div class="p-5 text-center text-muted">
+        <i class="bi bi-inbox fs-1 d-block mb-2 text-muted opacity-50"></i>
+        <div class="fw-semibold">조건에 맞는 주문 내역이 없습니다.</div>
+        <p class="very-small mt-1 text-muted">검색어 및 상태 조건을 변경하거나 필터를 초기화해보세요.</p>
+        <a href="{{ url_for('admin.order_list') }}" class="btn btn-outline-secondary btn-sm rounded-pill mt-2">
+            필터 초기화
+        </a>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
