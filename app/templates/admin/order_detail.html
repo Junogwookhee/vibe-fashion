@@ -6,7 +6,7 @@
 {% block content %}
 <!-- 뒤로가기 링크 -->
 <div class="mb-3">
-    <a href="{{ url_for('admin.order_list') }}" class="text-muted small text-decoration-none">
+    <a href="{{ url_for('admin.order_list', task=from_task) if from_task in ('unshipped', 'refunds') else url_for('admin.order_list') }}" class="text-muted small text-decoration-none">
         <i class="bi bi-arrow-left me-1"></i>주문 목록으로 돌아가기
     </a>
 </div>
@@ -176,6 +176,48 @@
                     현재 상태(<strong>{{ status_labels.get(cur_status, cur_status) }}</strong>)는 최종 단계이므로 추가 상태 변경이 불가능합니다.
                 </div>
                 {% endif %}
+            </div>
+        </div>
+
+        <div class="admin-card mb-4 border-warning border-opacity-25">
+            <div class="admin-card-header">
+                <div class="d-flex align-items-center gap-2">
+                    <i class="bi bi-arrow-counterclockwise text-warning"></i>
+                    <h2 class="admin-card-title small">취소·환불 요청</h2>
+                </div>
+            </div>
+            <div class="p-3">
+                {% for refund in refunds %}
+                <div class="{% if not loop.last %}border-bottom pb-3 mb-3{% endif %}">
+                    <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
+                        <span class="badge {% if refund.status == 'requested' %}bg-warning text-dark{% elif refund.status == 'approved' %}bg-primary{% elif refund.status == 'rejected' %}bg-secondary{% else %}bg-success{% endif %}">{{ refund.status }}</span>
+                        <strong class="small">{{ "{:,}".format((refund.refund_amount or 0)|int) }}원</strong>
+                    </div>
+                    <div class="small text-dark">{{ refund.reason }}</div>
+                    <div class="very-small text-muted mt-1">접수 {{ (refund.created_at or '')[:16]|replace('T', ' ') }}</div>
+                    {% if refund.admin_note %}<div class="very-small text-muted mt-1">관리자 메모: {{ refund.admin_note }}</div>{% endif %}
+                    {% if refund.status == 'requested' %}
+                    <div class="d-flex gap-2 mt-3">
+                        <form method="POST" action="{{ url_for('admin.order_refund_review', order_id=order.id, refund_id=refund.id) }}">
+                            <input type="hidden" name="csrf_token" value="{{ admin_csrf_token }}">
+                            <input type="hidden" name="status" value="approved">
+                            <input type="hidden" name="from_task" value="{{ from_task }}">
+                            <button type="submit" class="btn btn-primary btn-sm">승인</button>
+                        </form>
+                        <form method="POST" action="{{ url_for('admin.order_refund_review', order_id=order.id, refund_id=refund.id) }}">
+                            <input type="hidden" name="csrf_token" value="{{ admin_csrf_token }}">
+                            <input type="hidden" name="status" value="rejected">
+                            <input type="hidden" name="from_task" value="{{ from_task }}">
+                            <button type="submit" class="btn btn-outline-secondary btn-sm">거절</button>
+                        </form>
+                    </div>
+                    {% elif refund.status == 'approved' %}
+                    <div class="very-small text-muted mt-2">승인 상태입니다. 실제 환불은 결제사에서 별도로 처리해야 합니다.</div>
+                    {% endif %}
+                </div>
+                {% else %}
+                <div class="small text-muted">이 주문의 환불 요청이 없습니다.</div>
+                {% endfor %}
             </div>
         </div>
 

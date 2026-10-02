@@ -11,6 +11,176 @@
 </div>
 {% endif %}
 
+<!-- 처리할 업무 -->
+<section class="admin-card p-3 p-lg-4 mb-4" aria-labelledby="workAlertsTitle">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+        <div>
+            <h2 id="workAlertsTitle" class="h5 fw-bold mb-1">처리할 업무</h2>
+            <div class="very-small text-muted">전체 미처리 업무 · 마지막 조회 <span id="lastWorkAlertRefresh">{{ last_work_alert_refresh }}</span></div>
+        </div>
+        <button type="button" id="refreshWorkAlerts" class="btn btn-outline-secondary btn-sm" data-endpoint="{{ url_for('admin.work_alerts_api') }}" aria-label="업무 알림 새로고침">
+            <i class="bi bi-arrow-clockwise me-1" aria-hidden="true"></i>새로고침
+        </button>
+    </div>
+    <div id="workAlertRefreshStatus" class="small text-warning mb-2" role="status" aria-live="polite"></div>
+
+    <div class="row g-3">
+        <div class="col-12 col-md-6 col-xxl-4">
+            <div class="admin-card h-100 mb-0 border-danger border-opacity-25">
+                <div class="p-3">
+                    <div class="d-flex justify-content-between align-items-start gap-2">
+                        <div>
+                            <h3 class="h6 fw-bold text-danger mb-1">품절</h3>
+
+                        {% block extra_js %}
+                        <script>
+                            <div class="fs-3 fw-bold">{% if work_alerts.out_of_stock.count is not none %}{{ work_alerts.out_of_stock.count }}{% else %}—{% endif %}<span class="fs-6 fw-normal ms-1">항목</span></div>
+                            const button = this;
+                            const status = document.getElementById('workAlertRefreshStatus');
+                            button.disabled = true;
+                            status.textContent = '';
+                            try {
+                                const response = await fetch(button.dataset.endpoint, {
+                                    headers: {'Accept': 'application/json'},
+                                    credentials: 'same-origin'
+                                });
+                                if (!response.ok) throw new Error('refresh failed');
+                                const payload = await response.json();
+                                if (!payload.alerts || !payload.refreshed_at) throw new Error('invalid response');
+                                window.location.reload();
+                            } catch (error) {
+                                status.textContent = '업무 알림을 새로고침하지 못했습니다. 잠시 후 다시 시도해주세요.';
+                                button.disabled = false;
+                            }
+                        });
+                        </script>
+                        {% endblock %}
+                            <div class="very-small text-muted">판매 중 상품의 판매 가능 재고 0개 · 옵션/상품 단위</div>
+                        </div>
+                        {% if work_alerts.out_of_stock.state == 'ready' %}
+                        <a href="{{ url_for('admin.inventory_list', task='out_of_stock') }}" class="btn btn-outline-danger btn-sm">목록 보기</a>
+                        {% endif %}
+                    </div>
+                    {% if work_alerts.out_of_stock.state == 'error' %}
+                    <div class="alert alert-warning py-2 px-3 small mt-3 mb-0">불러오지 못했습니다. <a href="{{ url_for('admin.dashboard') }}" class="alert-link">재시도</a></div>
+                    {% elif work_alerts.out_of_stock.count == 0 %}
+                    <div class="small text-muted mt-3">처리할 업무가 없습니다.</div>
+                    {% elif work_alerts.out_of_stock.state == 'ready' %}
+                    <ul class="list-unstyled border-top mt-3 pt-2 mb-0">
+                        {% for item in work_alerts.out_of_stock.items %}
+                        <li class="py-1 small"><a class="text-decoration-none d-flex justify-content-between gap-2" href="{{ url_for('admin.inventory_list', task='out_of_stock') }}#inventory-{{ item.target_id }}"><span class="text-truncate">{{ item.product_name }} · {{ item.option_info }}</span><strong class="text-danger flex-shrink-0">{{ item.stock }}개</strong></a></li>
+                        {% endfor %}
+                    </ul>
+                    <a href="{{ url_for('admin.inventory_list', task='out_of_stock') }}" class="d-inline-block small fw-semibold mt-2">전체 보기 <i class="bi bi-arrow-right" aria-hidden="true"></i></a>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <div class="col-12 col-md-6 col-xxl-4">
+            <div class="admin-card h-100 mb-0 border-warning border-opacity-25">
+                <div class="p-3">
+                    <div class="d-flex justify-content-between align-items-start gap-2">
+                        <div>
+                            <h3 class="h6 fw-bold text-warning-emphasis mb-1">재고 부족</h3>
+                            <div class="fs-3 fw-bold">{% if work_alerts.low_stock.count is not none %}{{ work_alerts.low_stock.count }}{% else %}—{% endif %}<span class="fs-6 fw-normal ms-1">항목</span></div>
+                            <div class="very-small text-muted">판매 중 · 재고 1~{{ low_stock_threshold }}개 · 품절 제외</div>
+                        </div>
+                        {% if work_alerts.low_stock.state == 'ready' %}
+                        <a href="{{ url_for('admin.inventory_list', task='low_stock') }}" class="btn btn-outline-warning btn-sm">목록 보기</a>
+                        {% endif %}
+                    </div>
+                    {% if work_alerts.low_stock.state == 'error' %}
+                    <div class="alert alert-warning py-2 px-3 small mt-3 mb-0">불러오지 못했습니다. <a href="{{ url_for('admin.dashboard') }}" class="alert-link">재시도</a></div>
+                    {% elif work_alerts.low_stock.count == 0 %}
+                    <div class="small text-muted mt-3">처리할 업무가 없습니다.</div>
+                    {% elif work_alerts.low_stock.state == 'ready' %}
+                    <ul class="list-unstyled border-top mt-3 pt-2 mb-0">
+                        {% for item in work_alerts.low_stock.items %}
+                        <li class="py-1 small"><a class="text-decoration-none d-flex justify-content-between gap-2" href="{{ url_for('admin.inventory_list', task='low_stock') }}#inventory-{{ item.target_id }}"><span class="text-truncate">{{ item.product_name }} · {{ item.option_info }}</span><strong class="text-warning-emphasis flex-shrink-0">{{ item.stock }}개</strong></a></li>
+                        {% endfor %}
+                    </ul>
+                    <a href="{{ url_for('admin.inventory_list', task='low_stock') }}" class="d-inline-block small fw-semibold mt-2">전체 보기 <i class="bi bi-arrow-right" aria-hidden="true"></i></a>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <div class="col-12 col-md-6 col-xxl-4">
+            <div class="admin-card h-100 mb-0 border-primary border-opacity-25">
+                <div class="p-3">
+                    <div class="d-flex justify-content-between align-items-start gap-2">
+                        <div>
+                            <h3 class="h6 fw-bold text-primary mb-1">미발송 주문</h3>
+                            <div class="fs-3 fw-bold">{% if work_alerts.unshipped.count is not none %}{{ work_alerts.unshipped.count }}{% else %}—{% endif %}<span class="fs-6 fw-normal ms-1">주문</span></div>
+                            <div class="very-small text-muted">결제 완료/배송 준비 · 취소/환불 검토 보류 제외</div>
+                        </div>
+                        {% if work_alerts.unshipped.state == 'ready' %}
+                        <a href="{{ url_for('admin.order_list', task='unshipped') }}" class="btn btn-outline-primary btn-sm">목록 보기</a>
+                        {% endif %}
+                    </div>
+                    {% if work_alerts.unshipped.state == 'error' %}
+                    <div class="alert alert-warning py-2 px-3 small mt-3 mb-0">불러오지 못했습니다. <a href="{{ url_for('admin.dashboard') }}" class="alert-link">재시도</a></div>
+                    {% elif work_alerts.unshipped.count == 0 %}
+                    <div class="small text-muted mt-3">처리할 업무가 없습니다.</div>
+                    {% elif work_alerts.unshipped.state == 'ready' %}
+                    <ul class="list-unstyled border-top mt-3 pt-2 mb-0">
+                        {% for item in work_alerts.unshipped.items %}
+                        <li class="py-1 small"><a class="text-decoration-none d-flex justify-content-between gap-2" href="{{ url_for('admin.order_detail', order_id=item.id, from_task='unshipped') }}"><span class="font-monospace">{{ item.order_number }}</span><span class="text-muted flex-shrink-0">{{ item.display_time }}</span></a><div class="very-small text-muted">{{ '결제 완료 · 미처리' if item.status == 'PAID' else '배송 준비 중' }}</div></li>
+                        {% endfor %}
+                    </ul>
+                    <a href="{{ url_for('admin.order_list', task='unshipped') }}" class="d-inline-block small fw-semibold mt-2">전체 보기 <i class="bi bi-arrow-right" aria-hidden="true"></i></a>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <div class="col-12 col-md-6 col-xxl-4">
+            <div class="admin-card h-100 mb-0 border-secondary border-opacity-25">
+                <div class="p-3">
+                    <div class="d-flex justify-content-between align-items-start gap-2">
+                        <div>
+                            <h3 class="h6 fw-bold text-secondary mb-1">취소·환불 요청</h3>
+                            <div class="fs-3 fw-bold">{% if work_alerts.refunds.count is not none %}{{ work_alerts.refunds.count }}{% else %}—{% endif %}<span class="fs-6 fw-normal ms-1">고유 주문</span></div>
+                            <div class="very-small text-muted">요청/승인 상태 · 환불 완료/거절 제외</div>
+                        </div>
+                        {% if work_alerts.refunds.state == 'ready' %}
+                        <a href="{{ url_for('admin.order_list', task='refunds') }}" class="btn btn-outline-secondary btn-sm">검토 목록</a>
+                        {% endif %}
+                    </div>
+                    {% if work_alerts.refunds.state == 'error' %}
+                    <div class="alert alert-warning py-2 px-3 small mt-3 mb-0">불러오지 못했습니다. <a href="{{ url_for('admin.dashboard') }}" class="alert-link">재시도</a></div>
+                    {% elif work_alerts.refunds.count == 0 %}
+                    <div class="small text-muted mt-3">처리할 업무가 없습니다.</div>
+                    {% elif work_alerts.refunds.state == 'ready' %}
+                    <ul class="list-unstyled border-top mt-3 pt-2 mb-0">
+                        {% for item in work_alerts.refunds.items %}
+                        <li class="py-1 small"><a class="text-decoration-none d-flex justify-content-between gap-2" href="{{ url_for('admin.order_detail', order_id=item.id, from_task='refunds') }}"><span class="font-monospace">{{ item.order_number }}</span><span class="text-muted flex-shrink-0">{{ item.display_time }}</span></a><div class="very-small text-muted">{{ '취소 검토 요청' if item.refund_status == 'requested' else '환불 승인 후 처리 대기' }}</div></li>
+                        {% endfor %}
+                    </ul>
+                    <a href="{{ url_for('admin.order_list', task='refunds') }}" class="d-inline-block small fw-semibold mt-2">전체 보기 <i class="bi bi-arrow-right" aria-hidden="true"></i></a>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <div class="col-12 col-md-6 col-xxl-4">
+            <div class="admin-card h-100 mb-0">
+                <div class="p-3">
+                    <div class="d-flex justify-content-between align-items-start gap-2">
+                        <div>
+                            <h3 class="h6 fw-bold text-muted mb-1">미답변 문의</h3>
+                            <div class="fs-3 fw-bold">—<span class="fs-6 fw-normal ms-1">건</span></div>
+                            <div class="very-small text-muted">문의 접수·답변 관리 기능 미구현</div>
+                        </div>
+                        <span class="badge text-bg-light border">준비 중</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
 <!-- 1. 핵심 지표 KPI 카드 (실제 데이터 기반) -->
 <div class="row g-3 mb-4">
     <!-- 전체 상품 수 -->

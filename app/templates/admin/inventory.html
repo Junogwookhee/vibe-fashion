@@ -14,6 +14,16 @@
     </div>
 </div>
 
+{% if work_task %}
+<div class="admin-card p-3 mb-4 d-flex flex-wrap justify-content-between align-items-center gap-2">
+    <div>
+        <strong>{{ '품절 재고' if work_task == 'out_of_stock' else '재고 부족' }}</strong>
+        <span class="text-muted small ms-2">판매 중 상품만 · 옵션 상품은 옵션 단위 · 기준 {{ metrics.threshold }}개</span>
+    </div>
+    <a href="{{ url_for('admin.inventory_list') }}" class="btn btn-outline-secondary btn-sm">전체 재고 보기</a>
+</div>
+{% endif %}
+
 {% if db_error %}
 <div class="alert alert-warning border-0 shadow-sm rounded-3 mb-4 d-flex align-items-center gap-2">
     <i class="bi bi-exclamation-triangle-fill fs-5 text-warning"></i>
@@ -21,6 +31,7 @@
 </div>
 {% endif %}
 
+{% if not work_task %}
 <!-- 1. 상단 재고 요약 카드 (실제 데이터 집계) -->
 <div class="row g-3 mb-4">
     <!-- 전체 관리 항목 수 -->
@@ -65,8 +76,10 @@
         </div>
     </div>
 </div>
+{% endif %}
 
 <!-- 2. 검색 및 필터 바 -->
+{% if not work_task %}
 <div class="admin-card p-3 mb-4">
     <form method="GET" action="{{ url_for('admin.inventory_list') }}" class="row g-2 align-items-center">
         <!-- 검색어 (상품명 / SKU / 옵션) -->
@@ -108,12 +121,13 @@
         </div>
     </form>
 </div>
+{% endif %}
 
 <!-- 3. 재고 목록 테이블 -->
 <div class="admin-card mb-4">
     <div class="admin-card-header">
         <span class="small text-muted">
-            재고 항목: 총 <strong class="text-dark">{{ total_count }}</strong>건 ({{ page }}/{{ total_pages }} 페이지)
+            {% if db_error %}재고 항목: 불러오지 못했습니다{% else %}재고 항목: 총 <strong class="text-dark">{{ total_count }}</strong>건 ({{ page }}/{{ total_pages }} 페이지){% endif %}
         </span>
         <span class="very-small text-muted">
             * 재고 부족 기준: <strong>{{ metrics.threshold }}개 이하</strong> | 품절: <strong>0개</strong>
@@ -136,7 +150,7 @@
             </thead>
             <tbody>
                 {% for it in items %}
-                <tr>
+                <tr id="inventory-{{ it.target_id }}">
                     <td>
                         {% if it.thumbnail_url %}
                             <img src="{{ it.thumbnail_url }}" alt="{{ it.product_name }}" class="rounded border object-fit-cover" style="width: 48px; height: 56px;">
@@ -225,21 +239,27 @@
         <nav aria-label="재고 목록 페이지 네비게이션">
             <ul class="pagination pagination-sm mb-0">
                 <li class="page-item {% if page <= 1 %}disabled{% endif %}">
-                    <a class="page-link" href="{{ url_for('admin.inventory_list', page=page-1, q=query_text, category=category_id, status=status_filter) }}">이전</a>
+                    <a class="page-link" href="{{ url_for('admin.inventory_list', page=page-1, q=query_text, category=category_id, status=status_filter, task=work_task) }}">이전</a>
                 </li>
                 {% for p in range(1, total_pages + 1) %}
                     <li class="page-item {% if p == page %}active{% endif %}">
-                        <a class="page-link" href="{{ url_for('admin.inventory_list', page=p, q=query_text, category=category_id, status=status_filter) }}">{{ p }}</a>
+                        <a class="page-link" href="{{ url_for('admin.inventory_list', page=p, q=query_text, category=category_id, status=status_filter, task=work_task) }}">{{ p }}</a>
                     </li>
                 {% endfor %}
                 <li class="page-item {% if page >= total_pages %}disabled{% endif %}">
-                    <a class="page-link" href="{{ url_for('admin.inventory_list', page=page+1, q=query_text, category=category_id, status=status_filter) }}">다음</a>
+                    <a class="page-link" href="{{ url_for('admin.inventory_list', page=page+1, q=query_text, category=category_id, status=status_filter, task=work_task) }}">다음</a>
                 </li>
             </ul>
         </nav>
     </div>
     {% endif %}
 
+    {% elif db_error %}
+    <div class="p-5 text-center text-warning">
+        <i class="bi bi-exclamation-triangle fs-2 d-block mb-2"></i>
+        <div class="fw-semibold">목록을 불러오지 못했습니다.</div>
+        <a href="{{ url_for('admin.inventory_list', task=work_task) }}" class="btn btn-outline-secondary btn-sm mt-3">재시도</a>
+    </div>
     {% else %}
     <div class="p-5 text-center text-muted">
         <i class="bi bi-inbox fs-1 d-block mb-2 text-muted opacity-50"></i>

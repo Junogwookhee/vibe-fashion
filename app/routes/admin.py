@@ -25,6 +25,11 @@ from flask import (
     url_for,
 )
 from app.utils.supabase_client import get_supabase_admin_client
+from app.utils.admin_work_alerts import (
+    LOW_STOCK_THRESHOLD,
+    format_seoul_datetime,
+    load_work_alerts,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -83,12 +88,12 @@ def admin_required(f):
         try:
             prof_res = admin_client.table('profiles').select('id, email, full_name, role').eq('id', user_id).execute()
             if not prof_res.data:
-                logger.warning(f"[Admin Security] 프로필 없는 사용자의 관리자 접근 차단: {user_id}")
+                logger.warning('[Admin Security] 프로필이 없는 사용자의 관리자 접근을 차단했습니다.')
                 return render_template('admin/unauthorized.html', user_email=(session.get('user') or {}).get('email')), 403
 
             profile = prof_res.data[0]
             if profile.get('role') != 'admin':
-                logger.warning(f"[Admin Security] 권한 없는 사용자의 관리자 접근 시도 (role={profile.get('role')}): {user_id}")
+                logger.warning('[Admin Security] 관리자 권한이 없는 접근을 차단했습니다.')
                 return render_template('admin/unauthorized.html', user_email=profile.get('email')), 403
 
             # 유효한 관리자 정보 컨텍스트 저장
@@ -121,6 +126,8 @@ def dashboard():
     - 최근 주문 내역 (최신 5건)
     """
     admin_client = get_supabase_admin_client()
+    work_alerts = load_work_alerts(admin_client)
+    last_work_alert_refresh = format_seoul_datetime(datetime.now(timezone.utc).isoformat())
 
     metrics = {
         'total_products': 0,
@@ -184,8 +191,20 @@ def dashboard():
         metrics=metrics,
         recent_orders=recent_orders,
         recent_products=recent_products,
-        db_error=db_error
+        db_error=db_error,
+        work_alerts=work_alerts,
+        last_work_alert_refresh=last_work_alert_refresh,
+        low_stock_threshold=LOW_STOCK_THRESHOLD
     )
+
+
+@admin_bp.route('/api/work-alerts', methods=['GET'])
+@admin_required
+def work_alerts_api():
+    """관리자 대시보드에서 수동 새로고침에 사용하는 업무 알림 API."""
+    alerts = load_work_alerts(get_supabase_admin_client())
+    refreshed_at = format_seoul_datetime(datetime.now(timezone.utc).isoformat())
+    return jsonify({'alerts': alerts, 'refreshed_at': refreshed_at})
 
 
 # ==============================================================================
@@ -750,6 +769,89 @@ def order_list():
         page = 1
     per_page = 10
 
+    work_task = request.args.get('task', '').strip().lower()
+    if work_task in ('unshipped', 'refunds'):
+        view_name = 'admin_unshipped_orders' if work_task == 'unshipped' else 'admin_pending_refund_orders'
+        view_columns = 'id, order_number, status, created_at' if work_task == 'unshipped' else 'id, order_number, order_status, requested_at, refund_status'
+        time_column = 'created_at' if work_task == 'unshipped' else 'requested_at'
+
+        try:
+            task_result = (
+                admin_client.table(view_name)
+                .select(view_columns, count='exact')
+                .order(time_column)
+                .range((page - 1) * per_page, page * per_page - 1)
+                .execute()
+            )
+            total_count = task_result.count
+            if total_count is None:
+                raise ValueError('정확한 업무 건수를 반환하지 않았습니다.')
+            task_rows = task_result.data or []
+            order_ids = [row['id'] for row in task_rows]
+
+            orders_by_id = {}
+            items_by_order = {}
+            if order_ids:
+                orders_result = (
+                    admin_client.table('orders')
+                    .select('id, order_number, status, created_at, payment_amount, total_amount')
+                    .in_('id', order_ids)
+                    .execute()
+                )
+                orders_by_id = {row['id']: row for row in (orders_result.data or [])}
+                items_result = (
+                    admin_client.table('order_items')
+                    .select('order_id, product_name, quantity')
+                    .in_('order_id', order_ids)
+                    .execute()
+                )
+                for item in items_result.data or []:
+                    items_by_order.setdefault(item['order_id'], []).append(item)
+
+            orders = []
+            for task_row in task_rows:
+                order = orders_by_id.get(task_row['id'])
+                if not order:
+                    raise ValueError('업무 view와 주문 데이터가 일치하지 않습니다.')
+                order = {**order, 'status': order.get('status') or task_row.get('status') or task_row.get('order_status')}
+                if work_task == 'refunds':
+                    order['refund_status'] = task_row.get('refund_status')
+                order_items_for_order = items_by_order.get(order['id'], [])
+                if order_items_for_order:
+                    first_name = order_items_for_order[0].get('product_name') or '주문 상품'
+                    extra = len(order_items_for_order) - 1
+                    order['summary_title'] = f"{first_name} 외 {extra}건" if extra > 0 else first_name
+                    order['total_item_count'] = sum(item.get('quantity') or 1 for item in order_items_for_order)
+                else:
+                    order['summary_title'] = '주문 상품 1건'
+                    order['total_item_count'] = 1
+                orders.append(order)
+
+            total_pages = max(1, math.ceil(total_count / per_page))
+            db_error = None
+        except Exception:
+            logger.error('[Admin Order Task List] 업무 주문 목록 조회에 실패했습니다.')
+            orders = []
+            total_count = None
+            total_pages = 1
+            db_error = '업무 목록을 불러오지 못했습니다. 새로고침 후 다시 시도해주세요.'
+
+        return render_template(
+            'admin/orders.html',
+            active_menu='orders',
+            orders=orders,
+            metrics={'unprocessed': 0, 'preparing': 0, 'in_transit': 0, 'cancelled': 0, 'total': 0},
+            query_text='',
+            status_filter='',
+            period_filter='',
+            page=page,
+            total_pages=total_pages,
+            total_count=total_count,
+            status_labels=STATUS_LABELS,
+            db_error=db_error,
+            work_task=work_task
+        )
+
     orders = []
     total_count = 0
     total_pages = 1
@@ -895,6 +997,15 @@ def order_detail(order_id):
         order = ord_res.data[0]
         cur_status = str(order.get('status') or '').upper()
 
+        refunds_res = (
+            admin_client.table('refunds')
+            .select('id, refund_amount, reason, status, admin_note, created_at, updated_at')
+            .eq('order_id', order_id)
+            .order('created_at', desc=True)
+            .execute()
+        )
+        refunds = refunds_res.data or []
+
         # 주문 상품 상세 조회 (주문 시점 스냅샷 그대로 노출)
         items_res = admin_client.table('order_items').select('*').eq('order_id', order_id).order('id').execute()
         order_items = items_res.data or []
@@ -967,13 +1078,47 @@ def order_detail(order_id):
             payment_badge_class=payment_badge_class,
             delivery_label=delivery_label,
             delivery_badge_class=delivery_badge_class,
-            order_logs=logs
+            order_logs=logs,
+            refunds=refunds,
+            from_task=request.args.get('from_task', '')
         )
 
     except Exception as e:
         logger.error(f"[Admin Order Detail Error] {e}", exc_info=True)
         flash('주문 상세 정보를 불러오는 중 오류가 발생했습니다.', 'danger')
         return redirect(url_for('admin.order_list'))
+
+
+@admin_bp.route('/orders/<order_id>/refunds/<refund_id>/review', methods=['POST'])
+@admin_required
+def order_refund_review(order_id, refund_id):
+    """기존 환불 요청의 관리자 검토 상태를 승인 또는 거절로 기록합니다."""
+    new_status = request.form.get('status', '').strip().lower()
+    if new_status not in {'approved', 'rejected'}:
+        abort(400, description='지원하지 않는 환불 검토 상태입니다.')
+
+    admin_client = get_supabase_admin_client()
+    try:
+        result = (
+            admin_client.table('refunds')
+            .update({'status': new_status, 'updated_at': datetime.now(timezone.utc).isoformat()})
+            .eq('id', refund_id)
+            .eq('order_id', order_id)
+            .eq('status', 'requested')
+            .select('id')
+            .execute()
+        )
+        if not result.data:
+            flash('요청이 이미 처리되었거나 찾을 수 없습니다. 최신 상태를 확인해주세요.', 'warning')
+        elif new_status == 'approved':
+            flash('환불 요청을 승인 상태로 기록했습니다. 실제 환불 금액 처리는 결제사에서 별도로 진행해야 합니다.', 'success')
+        else:
+            flash('환불 요청을 거절 상태로 기록했습니다.', 'success')
+    except Exception:
+        logger.error('[Admin Refund Review] 환불 요청 상태 변경에 실패했습니다.')
+        flash('환불 검토 상태를 저장하지 못했습니다.', 'danger')
+
+    return redirect(url_for('admin.order_detail', order_id=order_id, from_task=request.form.get('from_task', '')))
 
 
 @admin_bp.route('/orders/<order_id>/status', methods=['POST'])
@@ -1110,9 +1255,6 @@ def order_update_status(order_id):
 # ==============================================================================
 # [8] 재고 관리: 목록 및 요약 현황 (GET /admin/inventory)
 # ==============================================================================
-LOW_STOCK_THRESHOLD = 5  # 재고 부족 판정 기준 (5개 이하)
-
-
 @admin_bp.route('/inventory', methods=['GET'])
 @admin_required
 def inventory_list():
@@ -1136,6 +1278,59 @@ def inventory_list():
     except (ValueError, TypeError):
         page = 1
     per_page = 15
+
+    work_task = request.args.get('task', '').strip().lower()
+    if work_task in ('out_of_stock', 'low_stock'):
+        task_query = (
+            admin_client.table('admin_active_inventory_items')
+            .select(
+                'target_type, target_id, product_id, product_name, slug, thumbnail_url, '
+                'category_id, category_name, option_id, option_info, stock',
+                count='exact'
+            )
+        )
+        if work_task == 'out_of_stock':
+            task_query = task_query.eq('stock', 0).order('product_name')
+            status_filter = 'out_of_stock'
+        else:
+            task_query = task_query.gte('stock', 1).lte('stock', LOW_STOCK_THRESHOLD).order('stock').order('product_name')
+            status_filter = 'low'
+
+        try:
+            result = task_query.range((page - 1) * per_page, page * per_page - 1).execute()
+            total_count = result.count
+            if total_count is None:
+                raise ValueError('정확한 재고 건수를 반환하지 않았습니다.')
+            items = result.data or []
+            total_pages = max(1, math.ceil(total_count / per_page))
+            db_error = None
+        except Exception:
+            logger.error('[Admin Inventory Task List] 업무 재고 목록 조회에 실패했습니다.')
+            total_count = None
+            total_pages = 1
+            items = []
+            db_error = '업무 목록을 불러오지 못했습니다. 새로고침 후 다시 시도해주세요.'
+
+        return render_template(
+            'admin/inventory.html',
+            active_menu='inventory',
+            items=items,
+            categories=[],
+            metrics={
+                'total_items': 0,
+                'low_stock_items': 0,
+                'out_of_stock_items': 0,
+                'threshold': LOW_STOCK_THRESHOLD
+            },
+            query_text='',
+            category_id='',
+            status_filter=status_filter,
+            page=page,
+            total_pages=total_pages,
+            total_count=total_count,
+            db_error=db_error,
+            work_task=work_task
+        )
 
     categories = []
     items = []
