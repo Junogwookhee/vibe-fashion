@@ -12,7 +12,7 @@ LANGUAGE plpgsql
 AS $$
 DECLARE
     v_total_spent NUMERIC(12, 2);
-    v_new_grade TEXT;
+    v_new_grade public.user_grade;
 BEGIN
     -- 결제 완료 또는 배송 완료 상태인 실구매 누적액 계산
     SELECT COALESCE(SUM(total_amount), 0)
@@ -21,15 +21,15 @@ BEGIN
     WHERE user_id = target_user_id
       AND status::text IN ('PAID', 'DELIVERED', 'paid', 'delivered', 'preparing', 'shipping');
 
-    -- 등급 산정 로직
+    -- 등급 산정 로직 (public.user_grade enum 매핑)
     IF v_total_spent >= 1000000 THEN
-        v_new_grade := 'VIP';
+        v_new_grade := 'VIP'::public.user_grade;
     ELSIF v_total_spent >= 500000 THEN
-        v_new_grade := 'GOLD';
+        v_new_grade := 'GOLD'::public.user_grade;
     ELSIF v_total_spent >= 200000 THEN
-        v_new_grade := 'SILVER';
+        v_new_grade := 'SILVER'::public.user_grade;
     ELSE
-        v_new_grade := 'BRONZE';
+        v_new_grade := 'BRONZE'::public.user_grade;
     END IF;
 
     -- 프로필 테이블에 누적 구매금액 및 등급 반영
