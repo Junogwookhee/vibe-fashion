@@ -292,6 +292,12 @@
                     </a>
                 </li>
                 <li>
+                    <a href="{{ url_for('admin.inventory_list') }}" class="admin-menu-link {% if active_menu == 'inventory' %}active{% endif %}">
+                        <i class="bi bi-boxes"></i>
+                        <span>재고 관리</span>
+                    </a>
+                </li>
+                <li>
                     <a href="{{ url_for('admin.order_list') }}" class="admin-menu-link {% if active_menu == 'orders' %}active{% endif %}">
                         <i class="bi bi-receipt"></i>
                         <span>주문 관리</span>

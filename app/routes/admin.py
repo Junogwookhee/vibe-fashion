@@ -17,6 +17,7 @@ from flask import (
     current_app,
     flash,
     g,
+    jsonify,
     redirect,
     render_template,
     request,
@@ -872,3 +873,400 @@ def order_update_status(order_id):
         flash(f"주문 상태 갱신 중 오류가 발생했습니다: {e}", 'danger')
 
     return redirect(url_for('admin.order_detail', order_id=order_id))
+
+
+# ==============================================================================
+# [8] 재고 관리: 목록 및 요약 현황 (GET /admin/inventory)
+# ==============================================================================
+LOW_STOCK_THRESHOLD = 5  # 재고 부족 판정 기준 (5개 이하)
+
+
+@admin_bp.route('/inventory', methods=['GET'])
+@admin_required
+def inventory_list():
+    """
+    실제 데이터 기반 재고 관리 목록:
+    - 옵션 보유 상품: 각 색상·사이즈 옵션 단위로 재고 관리
+    - 단일 상품: 상품 단위로 재고 관리
+    - 요약 카드: 총 관리 항목 수, 재고 부족 항목 수(5개 이하), 품절 항목 수(0개)
+    - 검색: 상품명, 슬러그(상품코드)
+    - 필터: 카테고리, 상태(전체/정상/부족/품절)
+    - 페이지네이션 (페이지당 15개)
+    """
+    admin_client = get_supabase_admin_client()
+
+    query_text = request.args.get('q', '').strip()
+    category_id = request.args.get('category', '').strip()
+    status_filter = request.args.get('status', '').strip().lower()
+
+    try:
+        page = max(1, int(request.args.get('page', 1)))
+    except (ValueError, TypeError):
+        page = 1
+    per_page = 15
+
+    categories = []
+    items = []
+    total_count = 0
+    total_pages = 1
+    db_error = None
+
+    metrics = {
+        'total_items': 0,
+        'low_stock_items': 0,
+        'out_of_stock_items': 0,
+        'threshold': LOW_STOCK_THRESHOLD
+    }
+
+    try:
+        # 카테고리 목록 조회
+        cat_res = admin_client.table('categories').select('id, name, slug').order('sort_order').execute()
+        categories = cat_res.data or []
+        cat_map = {c.get('id'): (c.get('name') or '미지정') for c in categories if isinstance(c, dict)}
+
+        # 전체 상품 조회
+        prods_res = admin_client.table('products').select(
+            'id, category_id, name, slug, price, sale_price, stock, is_active, thumbnail_url, created_at'
+        ).order('created_at', desc=True).execute()
+        all_prods = prods_res.data or []
+
+        # 전체 옵션 조회
+        opts_res = admin_client.table('product_options').select(
+            'id, product_id, color, size, stock, additional_price, option_name, option_value'
+        ).order('id').execute()
+        all_opts = opts_res.data or []
+
+        # 상품별 옵션 그룹화
+        opts_by_product = {}
+        for opt in all_opts:
+            if isinstance(opt, dict) and opt.get('product_id'):
+                pid = opt['product_id']
+                opts_by_product.setdefault(pid, []).append(opt)
+
+        # 전체 재고 항목 구성 (옵션 우선, 없으면 상품 단일 단위)
+        all_inventory_items = []
+        for prod in all_prods:
+            if not isinstance(prod, dict) or not prod.get('id'):
+                continue
+            pid = prod['id']
+            p_opts = opts_by_product.get(pid, [])
+            c_name = cat_map.get(prod.get('category_id'), '미지정')
+
+            if p_opts:
+                for opt in p_opts:
+                    c = opt.get('color') or ''
+                    s = opt.get('size') or ''
+                    if c and s:
+                        opt_label = f"{c} / {s}"
+                    elif c or s:
+                        opt_label = c or s
+                    else:
+                        opt_label = opt.get('option_value') or '옵션'
+
+                    cur_stock = int(opt.get('stock') if opt.get('stock') is not None else 0)
+
+                    all_inventory_items.append({
+                        'target_type': 'option',
+                        'target_id': opt.get('id'),
+                        'product_id': pid,
+                        'product_name': prod.get('name') or '상품',
+                        'slug': prod.get('slug') or '',
+                        'thumbnail_url': prod.get('thumbnail_url'),
+                        'category_id': prod.get('category_id'),
+                        'category_name': c_name,
+                        'option_id': opt.get('id'),
+                        'option_info': opt_label,
+                        'color': c,
+                        'size': s,
+                        'stock': cur_stock,
+                        'is_active': prod.get('is_active', True)
+                    })
+            else:
+                cur_stock = int(prod.get('stock') if prod.get('stock') is not None else 0)
+                all_inventory_items.append({
+                    'target_type': 'product',
+                    'target_id': pid,
+                    'product_id': pid,
+                    'product_name': prod.get('name') or '상품',
+                    'slug': prod.get('slug') or '',
+                    'thumbnail_url': prod.get('thumbnail_url'),
+                    'category_id': prod.get('category_id'),
+                    'category_name': c_name,
+                    'option_id': None,
+                    'option_info': '단일 상품 (옵션 없음)',
+                    'color': '',
+                    'size': '',
+                    'stock': cur_stock,
+                    'is_active': prod.get('is_active', True)
+                })
+
+        # 요약 카드 수치 집계 (전체 항목 대상)
+        metrics['total_items'] = len(all_inventory_items)
+        for it in all_inventory_items:
+            stk = it['stock']
+            if stk <= 0:
+                metrics['out_of_stock_items'] += 1
+            elif stk <= LOW_STOCK_THRESHOLD:
+                metrics['low_stock_items'] += 1
+
+        # 검색 및 필터링 적용
+        filtered = []
+        for it in all_inventory_items:
+            # 검색어 필터 (상품명 또는 슬러그)
+            if query_text:
+                q_lower = query_text.lower()
+                name_match = q_lower in it['product_name'].lower()
+                slug_match = q_lower in it['slug'].lower()
+                opt_match = q_lower in it['option_info'].lower()
+                if not (name_match or slug_match or opt_match):
+                    continue
+
+            # 카테고리 필터
+            if category_id:
+                if str(it.get('category_id')) != str(category_id):
+                    continue
+
+            # 상태 필터
+            stk = it['stock']
+            if status_filter == 'normal' and (stk <= LOW_STOCK_THRESHOLD):
+                continue
+            elif status_filter == 'low' and (stk <= 0 or stk > LOW_STOCK_THRESHOLD):
+                continue
+            elif status_filter == 'out_of_stock' and (stk > 0):
+                continue
+
+            filtered.append(it)
+
+        total_count = len(filtered)
+        total_pages = max(1, math.ceil(total_count / per_page))
+        start_idx = (page - 1) * per_page
+        items = filtered[start_idx:start_idx + per_page]
+
+    except Exception as e:
+        logger.error(f"[Admin Inventory List Error] {e}", exc_info=True)
+        db_error = "재고 목록을 불러오는 중 오류가 발생했습니다."
+
+    return render_template(
+        'admin/inventory.html',
+        active_menu='inventory',
+        items=items,
+        categories=categories,
+        metrics=metrics,
+        query_text=query_text,
+        category_id=category_id,
+        status_filter=status_filter,
+        page=page,
+        total_pages=total_pages,
+        total_count=total_count,
+        db_error=db_error
+    )
+
+
+# ==============================================================================
+# [9] 재고 조정 처리 (POST /admin/inventory/adjust)
+# ==============================================================================
+@admin_bp.route('/inventory/adjust', methods=['POST'])
+@admin_required
+def inventory_adjust():
+    """
+    재고 조정 기능:
+    - 입고(IN): 수량 증가 (1 이상)
+    - 출고(OUT): 수량 감소 (1 이상, 음수 방지)
+    - 실사 조정(ADJUST): 최종 수량 지정 (0 이상)
+    - 사유 필수 검증
+    - 낙관적 락(expected_stock 검증): 동시 수정 시 충돌 감지 및 알림
+    - inventory_logs 이력 기록 (트랜잭션 일관성 유지)
+    """
+    admin_client = get_supabase_admin_client()
+
+    target_type = request.form.get('target_type', '').strip().lower()
+    target_id = request.form.get('target_id', '').strip()
+    adjust_type = request.form.get('adjust_type', '').strip().upper()
+    quantity_raw = request.form.get('quantity', '').strip()
+    expected_stock_raw = request.form.get('expected_stock', '').strip()
+    reason = request.form.get('reason', '').strip()
+
+    if target_type not in ('option', 'product') or not target_id:
+        flash('조정할 상품 또는 옵션 정보가 올바르지 않습니다.', 'danger')
+        return redirect(url_for('admin.inventory_list'))
+
+    if adjust_type not in ('IN', 'OUT', 'ADJUST'):
+        flash('올바른 재고 조정 유형(입고, 출고, 실사조정)을 선택해주세요.', 'danger')
+        return redirect(url_for('admin.inventory_list'))
+
+    if not reason:
+        flash('재고 변경 사유를 반드시 입력해주세요.', 'danger')
+        return redirect(url_for('admin.inventory_list'))
+
+    try:
+        qty = int(quantity_raw)
+    except (ValueError, TypeError):
+        flash('수량은 정수로 입력해주세요.', 'danger')
+        return redirect(url_for('admin.inventory_list'))
+
+    if adjust_type in ('IN', 'OUT') and qty <= 0:
+        flash('입고 및 출고 수량은 1개 이상이어야 합니다.', 'danger')
+        return redirect(url_for('admin.inventory_list'))
+
+    if adjust_type == 'ADJUST' and qty < 0:
+        flash('실사 조정 수량은 0개 이상이어야 합니다.', 'danger')
+        return redirect(url_for('admin.inventory_list'))
+
+    # 현재 DB 최신 재고 조회
+    try:
+        if target_type == 'option':
+            cur_res = admin_client.table('product_options').select('id, product_id, stock, color, size, option_value, products(name)').eq('id', target_id).execute()
+            if not cur_res.data:
+                flash('존재하지 않는 상품 옵션입니다.', 'warning')
+                return redirect(url_for('admin.inventory_list'))
+            record = cur_res.data[0]
+            current_stock = int(record.get('stock') if record.get('stock') is not None else 0)
+            product_id = record['product_id']
+            option_id = record['id']
+            p_name = (record.get('products') or {}).get('name') or '상품'
+            c = record.get('color') or ''
+            s = record.get('size') or ''
+            option_info = f"{c} / {s}" if c and s else (c or s or record.get('option_value') or '')
+        else:
+            cur_res = admin_client.table('products').select('id, name, stock').eq('id', target_id).execute()
+            if not cur_res.data:
+                flash('존재하지 않는 상품입니다.', 'warning')
+                return redirect(url_for('admin.inventory_list'))
+            record = cur_res.data[0]
+            current_stock = int(record.get('stock') if record.get('stock') is not None else 0)
+            product_id = record['id']
+            option_id = None
+            p_name = record.get('name') or '상품'
+            option_info = '단일 상품'
+
+        # 낙관적 락 검증: 사용자가 조정 모달을 띄웠을 때의 expected_stock과 현재 DB 재고 비교
+        if expected_stock_raw != '':
+            try:
+                expected_stock = int(expected_stock_raw)
+                if expected_stock != current_stock:
+                    flash(
+                        f"다른 관리자에 의해 해당 재고가 이미 변경되었습니다. (화면 기준: {expected_stock}개 &rarr; 현재 실제 재고: {current_stock}개) "
+                        "최신 재고 수량을 확인하신 후 다시 조정해주세요.",
+                        'danger'
+                    )
+                    return redirect(url_for('admin.inventory_list'))
+            except (ValueError, TypeError):
+                pass
+
+        # 신규 재고 및 증감량 계산
+        if adjust_type == 'IN':
+            new_stock = current_stock + qty
+            qty_change = qty
+        elif adjust_type == 'OUT':
+            new_stock = current_stock - qty
+            qty_change = -qty
+            if new_stock < 0:
+                flash(f"출고 수량({qty}개)이 현재 재고({current_stock}개)보다 많아 재고가 음수가 될 수 없습니다.", 'danger')
+                return redirect(url_for('admin.inventory_list'))
+        else:  # ADJUST
+            new_stock = qty
+            qty_change = new_stock - current_stock
+
+        # 안전한 조건부 UPDATE (동시 수정 시 충돌 방지)
+        if target_type == 'option':
+            up_res = (
+                admin_client.table('product_options')
+                .update({'stock': new_stock})
+                .eq('id', target_id)
+                .eq('stock', current_stock)
+                .execute()
+            )
+        else:
+            up_res = (
+                admin_client.table('products')
+                .update({'stock': new_stock, 'updated_at': datetime.now(timezone.utc).isoformat()})
+                .eq('id', target_id)
+                .eq('stock', current_stock)
+                .execute()
+            )
+
+        if not up_res.data or len(up_res.data) == 0:
+            flash("동시에 다른 재고 수정이 발생하여 반영되지 않았습니다. 페이지를 새로고침 후 다시 시도해주세요.", 'danger')
+            return redirect(url_for('admin.inventory_list'))
+
+        # 재고 변경 이력(inventory_logs) 기록
+        current_admin = getattr(g, 'admin_user', {})
+        admin_id = current_admin.get('id')
+        admin_email = current_admin.get('email')
+
+        log_data = {
+            'product_id': product_id,
+            'option_id': option_id,
+            'product_name': p_name,
+            'option_info': option_info,
+            'change_type': adjust_type,
+            'before_stock': current_stock,
+            'quantity_change': qty_change,
+            'after_stock': new_stock,
+            'reason': reason,
+            'admin_id': admin_id,
+            'admin_email': admin_email,
+            'created_at': datetime.now(timezone.utc).isoformat()
+        }
+
+        try:
+            admin_client.table('inventory_logs').insert(log_data).execute()
+        except Exception as log_err:
+            logger.warning(f"[Inventory Log Insert Warning] {log_err}")
+            # 테이블 미생성 시 안내
+            flash(
+                f"재고가 정상적으로 변경되었습니다 ({current_stock}개 &rarr; {new_stock}개). "
+                "단, Supabase에 inventory_logs 테이블이 아직 생성되지 않아 이력 기록이 누락되었습니다. 제공된 SQL 마이그레이션을 실행해주세요.",
+                'warning'
+            )
+            return redirect(url_for('admin.inventory_list'))
+
+        type_korean = {'IN': '입고', 'OUT': '출고', 'ADJUST': '실사 조정'}.get(adjust_type, adjust_type)
+        flash(f"[{type_korean}] 재고가 성공적으로 조정되었습니다. ({p_name} {option_info}: {current_stock}개 &rarr; {new_stock}개)", 'success')
+
+    except Exception as e:
+        logger.error(f"[Admin Inventory Adjust Error] {e}", exc_info=True)
+        flash(f"재고 조정 처리 중 오류가 발생했습니다: {e}", 'danger')
+
+    return redirect(url_for('admin.inventory_list'))
+
+
+# ==============================================================================
+# [10] 재고 변경 이력 조회 API (GET /admin/inventory/logs)
+# ==============================================================================
+@admin_bp.route('/inventory/logs', methods=['GET'])
+@admin_required
+def inventory_logs():
+    """
+    특정 상품 또는 옵션의 재고 변경 이력 JSON 조회:
+    - 쿼리: product_id, option_id (선택)
+    - 최신순 최대 30건 조회
+    """
+    admin_client = get_supabase_admin_client()
+
+    product_id = request.args.get('product_id', '').strip()
+    option_id = request.args.get('option_id', '').strip()
+
+    try:
+        query = admin_client.table('inventory_logs').select('*')
+        if option_id:
+            query = query.eq('option_id', option_id)
+        elif product_id:
+            query = query.eq('product_id', product_id)
+
+        res = query.order('created_at', desc=True).limit(30).execute()
+        logs = res.data or []
+
+        return jsonify({
+            'success': True,
+            'logs': logs,
+            'count': len(logs)
+        }), 200
+
+    except Exception as e:
+        logger.error(f"[Admin Inventory Logs Error] {e}")
+        return jsonify({
+            'success': False,
+            'error': '재고 변경 이력을 조회할 수 없습니다. inventory_logs 테이블이 생성되었는지 확인해주세요.',
+            'logs': []
+        }), 200

@@ -1,0 +1,617 @@
+{% extends 'admin/base.html' %}
+
+{% block title %}재고 관리 | VIBE-FASHION 관리자{% endblock %}
+{% block page_title %}재고 관리{% endblock %}
+
+{% block content %}
+<!-- 상단 헤더 안내 -->
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4">
+    <div>
+        <h4 class="fw-bold mb-1">실시간 재고 현황 및 조정</h4>
+        <p class="text-muted small mb-0">
+            상품 및 옵션별 실제 재고 수량을 확인하고 입고, 출고, 실사 조정을 안전하게 수행합니다.
+        </p>
+    </div>
+</div>
+
+{% if db_error %}
+<div class="alert alert-warning border-0 shadow-sm rounded-3 mb-4 d-flex align-items-center gap-2">
+    <i class="bi bi-exclamation-triangle-fill fs-5 text-warning"></i>
+    <div>{{ db_error }}</div>
+</div>
+{% endif %}
+
+<!-- 1. 상단 재고 요약 카드 (실제 데이터 집계) -->
+<div class="row g-3 mb-4">
+    <!-- 전체 관리 항목 수 -->
+    <div class="col-12 col-md-4">
+        <div class="admin-card p-3 h-100 mb-0">
+            <div class="d-flex align-items-center justify-content-between mb-2">
+                <span class="text-muted small fw-semibold">관리 중인 재고 항목</span>
+                <span class="badge bg-primary bg-opacity-10 text-primary p-2 rounded-3"><i class="bi bi-boxes fs-6"></i></span>
+            </div>
+            <div class="fs-3 fw-bold text-dark mb-1">{{ metrics.total_items }}개</div>
+            <div class="very-small text-muted">
+                <i class="bi bi-info-circle me-1"></i>집계 기준: 옵션 보유 상품은 옵션 단위, 단일 상품은 상품 단위
+            </div>
+        </div>
+    </div>
+
+    <!-- 재고 부족 항목 수 -->
+    <div class="col-12 col-md-4">
+        <div class="admin-card p-3 h-100 mb-0 border-warning border-opacity-50">
+            <div class="d-flex align-items-center justify-content-between mb-2">
+                <span class="text-warning-emphasis small fw-semibold">재고 부족 항목</span>
+                <span class="badge bg-warning bg-opacity-10 text-warning p-2 rounded-3"><i class="bi bi-exclamation-triangle-fill fs-6"></i></span>
+            </div>
+            <div class="fs-3 fw-bold text-warning mb-1">{{ metrics.low_stock_items }}개</div>
+            <div class="very-small text-muted">
+                <strong class="text-warning">{{ metrics.threshold }}개 이하</strong> 잔여 재고 (품절 직전 단계)
+            </div>
+        </div>
+    </div>
+
+    <!-- 품절 항목 수 -->
+    <div class="col-12 col-md-4">
+        <div class="admin-card p-3 h-100 mb-0 border-danger border-opacity-50">
+            <div class="d-flex align-items-center justify-content-between mb-2">
+                <span class="text-danger small fw-semibold">품절 항목</span>
+                <span class="badge bg-danger bg-opacity-10 text-danger p-2 rounded-3"><i class="bi bi-x-circle-fill fs-6"></i></span>
+            </div>
+            <div class="fs-3 fw-bold text-danger mb-1">{{ metrics.out_of_stock_items }}개</div>
+            <div class="very-small text-muted">
+                현재 재고 <strong>0개</strong> (고객 주문 불가 상태)
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 2. 검색 및 필터 바 -->
+<div class="admin-card p-3 mb-4">
+    <form method="GET" action="{{ url_for('admin.inventory_list') }}" class="row g-2 align-items-center">
+        <!-- 검색어 (상품명 / SKU / 옵션) -->
+        <div class="col-12 col-md-4">
+            <div class="input-group input-group-sm">
+                <span class="input-group-text bg-white border-end-0 text-muted"><i class="bi bi-search"></i></span>
+                <input type="text" name="q" class="form-control border-start-0" placeholder="상품명, 상품코드(SKU), 옵션 검색" value="{{ query_text }}">
+            </div>
+        </div>
+
+        <!-- 카테고리 필터 -->
+        <div class="col-6 col-md-3">
+            <select name="category" class="form-select form-select-sm">
+                <option value="">전체 카테고리</option>
+                {% for cat in categories %}
+                    <option value="{{ cat.id }}" {% if category_id == (cat.id|string) %}selected{% endif %}>{{ cat.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <!-- 재고 상태 필터 -->
+        <div class="col-6 col-md-3">
+            <select name="status" class="form-select form-select-sm">
+                <option value="">전체 재고 상태</option>
+                <option value="normal" {% if status_filter == 'normal' %}selected{% endif %}>정상 (6개 이상)</option>
+                <option value="low" {% if status_filter == 'low' %}selected{% endif %}>재고 부족 (1~5개)</option>
+                <option value="out_of_stock" {% if status_filter == 'out_of_stock' %}selected{% endif %}>품절 (0개)</option>
+            </select>
+        </div>
+
+        <!-- 필터 버튼 -->
+        <div class="col-12 col-md-2 d-flex gap-2">
+            <button type="submit" class="btn btn-dark btn-sm rounded-3 flex-grow-1">필터 적용</button>
+            {% if query_text or category_id or status_filter %}
+                <a href="{{ url_for('admin.inventory_list') }}" class="btn btn-outline-secondary btn-sm rounded-3" title="초기화">
+                    <i class="bi bi-arrow-counterclockwise"></i>
+                </a>
+            {% endif %}
+        </div>
+    </form>
+</div>
+
+<!-- 3. 재고 목록 테이블 -->
+<div class="admin-card mb-4">
+    <div class="admin-card-header">
+        <span class="small text-muted">
+            재고 항목: 총 <strong class="text-dark">{{ total_count }}</strong>건 ({{ page }}/{{ total_pages }} 페이지)
+        </span>
+        <span class="very-small text-muted">
+            * 재고 부족 기준: <strong>{{ metrics.threshold }}개 이하</strong> | 품절: <strong>0개</strong>
+        </span>
+    </div>
+
+    {% if items %}
+    <div class="table-responsive">
+        <table class="table admin-table mb-0 align-middle">
+            <thead>
+                <tr>
+                    <th style="width: 60px;">이미지</th>
+                    <th>상품명 / 상품코드(SKU)</th>
+                    <th>카테고리</th>
+                    <th>옵션 (색상 / 사이즈)</th>
+                    <th class="text-center">현재 재고</th>
+                    <th class="text-center">재고 상태</th>
+                    <th class="text-end" style="width: 200px;">작업</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for it in items %}
+                <tr>
+                    <td>
+                        {% if it.thumbnail_url %}
+                            <img src="{{ it.thumbnail_url }}" alt="{{ it.product_name }}" class="rounded border object-fit-cover" style="width: 48px; height: 56px;">
+                        {% else %}
+                            <div class="bg-light rounded d-flex align-items-center justify-content-center text-muted border" style="width: 48px; height: 56px;">
+                                <i class="bi bi-image fs-6"></i>
+                            </div>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <div class="fw-bold text-dark small text-truncate" style="max-width: 240px;">
+                            {{ it.product_name }}
+                        </div>
+                        <div class="very-small text-muted font-monospace mt-1">
+                            SKU: {{ it.slug or '-' }}
+                        </div>
+                    </td>
+                    <td>
+                        <span class="badge bg-light text-dark border very-small">
+                            {{ it.category_name }}
+                        </span>
+                    </td>
+                    <td>
+                        {% if it.target_type == 'option' %}
+                            <span class="fw-semibold text-dark small">
+                                <i class="bi bi-tag me-1 text-muted"></i>{{ it.option_info }}
+                            </span>
+                        {% else %}
+                            <span class="badge bg-secondary bg-opacity-10 text-secondary very-small">
+                                {{ it.option_info }}
+                            </span>
+                        {% endif %}
+                    </td>
+                    <td class="text-center">
+                        <span class="fs-6 fw-bold {% if it.stock <= 0 %}text-danger{% elif it.stock <= metrics.threshold %}text-warning{% else %}text-dark{% endif %}">
+                            {{ it.stock }}
+                        </span>
+                        <span class="very-small text-muted">개</span>
+                    </td>
+                    <td class="text-center">
+                        {% if it.stock <= 0 %}
+                            <span class="badge bg-danger badge-status d-inline-flex align-items-center gap-1">
+                                <i class="bi bi-x-circle-fill"></i>품절
+                            </span>
+                        {% elif it.stock <= metrics.threshold %}
+                            <span class="badge bg-warning text-dark badge-status d-inline-flex align-items-center gap-1">
+                                <i class="bi bi-exclamation-triangle-fill"></i>재고 부족 ({{ it.stock }}개)
+                            </span>
+                        {% else %}
+                            <span class="badge bg-success bg-opacity-10 text-success badge-status d-inline-flex align-items-center gap-1">
+                                <i class="bi bi-check-circle-fill"></i>정상
+                            </span>
+                        {% endif %}
+                    </td>
+                    <td class="text-end">
+                        <div class="d-inline-flex gap-1">
+                            <!-- 재고 조정 버튼 -->
+                            <button type="button" class="btn btn-coral btn-sm rounded-2 py-1 px-2 very-small btn-open-adjust"
+                                    data-target-type="{{ it.target_type }}"
+                                    data-target-id="{{ it.target_id }}"
+                                    data-product-name="{{ it.product_name }}"
+                                    data-option-info="{{ it.option_info }}"
+                                    data-current-stock="{{ it.stock }}">
+                                <i class="bi bi-sliders me-1"></i>재고 조정
+                            </button>
+
+                            <!-- 변경 이력 버튼 -->
+                            <button type="button" class="btn btn-outline-secondary btn-sm rounded-2 py-1 px-2 very-small btn-open-logs"
+                                    data-product-id="{{ it.product_id }}"
+                                    data-option-id="{{ it.option_id or '' }}"
+                                    data-item-title="{{ it.product_name }} - {{ it.option_info }}"
+                                    title="재고 변경 이력 조회">
+                                <i class="bi bi-clock-history"></i>이력
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- 페이지네이션 컨트롤 -->
+    {% if total_pages > 1 %}
+    <div class="p-3 border-top d-flex justify-content-center">
+        <nav aria-label="재고 목록 페이지 네비게이션">
+            <ul class="pagination pagination-sm mb-0">
+                <li class="page-item {% if page <= 1 %}disabled{% endif %}">
+                    <a class="page-link" href="{{ url_for('admin.inventory_list', page=page-1, q=query_text, category=category_id, status=status_filter) }}">이전</a>
+                </li>
+                {% for p in range(1, total_pages + 1) %}
+                    <li class="page-item {% if p == page %}active{% endif %}">
+                        <a class="page-link" href="{{ url_for('admin.inventory_list', page=p, q=query_text, category=category_id, status=status_filter) }}">{{ p }}</a>
+                    </li>
+                {% endfor %}
+                <li class="page-item {% if page >= total_pages %}disabled{% endif %}">
+                    <a class="page-link" href="{{ url_for('admin.inventory_list', page=page+1, q=query_text, category=category_id, status=status_filter) }}">다음</a>
+                </li>
+            </ul>
+        </nav>
+    </div>
+    {% endif %}
+
+    {% else %}
+    <div class="p-5 text-center text-muted">
+        <i class="bi bi-inbox fs-1 d-block mb-2 text-muted opacity-50"></i>
+        <div class="fw-semibold">조건에 맞는 재고 항목이 없습니다.</div>
+        <p class="very-small mt-1 text-muted">검색어 및 상태 조건을 변경하거나 필터를 초기화해보세요.</p>
+        <a href="{{ url_for('admin.inventory_list') }}" class="btn btn-outline-secondary btn-sm rounded-pill mt-2">
+            필터 초기화
+        </a>
+    </div>
+    {% endif %}
+</div>
+
+<!-- ========================================================================= -->
+<!-- 4. 재고 조정 모달 (입고 / 출고 / 실사 조정) -->
+<!-- ========================================================================= -->
+<div class="modal fade" id="adjustModal" tabindex="-1" aria-labelledby="adjustModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header">
+                <h5 class="modal-title fw-bold fs-6 d-flex align-items-center gap-2" id="adjustModalLabel">
+                    <i class="bi bi-sliders text-coral"></i>
+                    <span>재고 수량 조정</span>
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="닫기"></button>
+            </div>
+            <form method="POST" action="{{ url_for('admin.inventory_adjust') }}" id="adjustForm">
+                <!-- CSRF 보호 토큰 -->
+                <input type="hidden" name="csrf_token" value="{{ admin_csrf_token }}">
+                <!-- 대상 정보 및 동시성 검증용 기대 재고 -->
+                <input type="hidden" name="target_type" id="modalTargetType" value="">
+                <input type="hidden" name="target_id" id="modalTargetId" value="">
+                <input type="hidden" name="expected_stock" id="modalExpectedStock" value="">
+
+                <div class="modal-body p-4">
+                    <!-- 대상 상품 및 옵션 요약 -->
+                    <div class="p-3 mb-3 bg-light rounded-3 border">
+                        <div class="very-small text-muted mb-1">조정 대상 항목</div>
+                        <div class="fw-bold text-dark small" id="modalItemTitle">상품명</div>
+                        <div class="d-flex align-items-baseline gap-2 mt-2 pt-2 border-top">
+                            <span class="very-small text-muted">현재 재고:</span>
+                            <span class="fs-5 fw-bold text-dark" id="modalCurrentStockText">0</span>개
+                        </div>
+                    </div>
+
+                    <!-- 조정 유형 선택 (입고 / 출고 / 실사 조정) -->
+                    <div class="mb-3">
+                        <label class="form-label very-small fw-bold text-muted">조정 유형 <span class="text-danger">*</span></label>
+                        <div class="btn-group w-100" role="group" aria-label="조정 유형 선택">
+                            <input type="radio" class="btn-check" name="adjust_type" id="typeIn" value="IN" checked>
+                            <label class="btn btn-outline-success btn-sm py-2" for="typeIn">
+                                <i class="bi bi-box-arrow-in-down me-1"></i>입고 (+증가)
+                            </label>
+
+                            <input type="radio" class="btn-check" name="adjust_type" id="typeOut" value="OUT">
+                            <label class="btn btn-outline-danger btn-sm py-2" for="typeOut">
+                                <i class="bi bi-box-arrow-up me-1"></i>출고 (-감소)
+                            </label>
+
+                            <input type="radio" class="btn-check" name="adjust_type" id="typeAdjust" value="ADJUST">
+                            <label class="btn btn-outline-primary btn-sm py-2" for="typeAdjust">
+                                <i class="bi bi-clipboard-check me-1"></i>실사 조정 (최종수량)
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- 수량 입력 -->
+                    <div class="mb-3">
+                        <label for="modalQuantity" class="form-label very-small fw-bold text-muted" id="quantityInputLabel">
+                            입고 수량 <span class="text-danger">*</span>
+                        </label>
+                        <input type="number" class="form-control" id="modalQuantity" name="quantity" min="1" step="1" value="1" required>
+                        <div class="very-small text-muted mt-1" id="quantityHelpText">
+                            입고할 수량을 1 이상의 양의 정수로 입력하세요.
+                        </div>
+                    </div>
+
+                    <!-- 예상 최종 수량 실시간 표시 바 -->
+                    <div class="p-3 mb-3 rounded-3 border d-flex justify-content-between align-items-center" id="expectedStockBox" style="background-color: #f1f5f9;">
+                        <span class="very-small text-muted fw-semibold">조정 후 예상 재고:</span>
+                        <div class="d-flex align-items-baseline gap-1">
+                            <span class="fs-5 fw-bold text-coral" id="modalExpectedStockText">0</span>
+                            <span class="very-small text-muted">개</span>
+                        </div>
+                    </div>
+
+                    <!-- 변경 사유 (필수) -->
+                    <div class="mb-2">
+                        <label for="modalReason" class="form-label very-small fw-bold text-muted">
+                            조정 사유 <span class="text-danger">*</span>
+                        </label>
+                        <input type="text" class="form-control form-control-sm" id="modalReason" name="reason" placeholder="예: 신규 정기 입고, 불량 파손 폐기, 분기 정기 재고 실사" required>
+                        <div class="very-small text-muted mt-1">
+                            재고 변동 이력에 안전하게 기록되므로 사유를 상세히 입력해주세요.
+                        </div>
+                    </div>
+                </div>
+
+                <div class="modal-footer bg-light p-3">
+                    <button type="button" class="btn btn-outline-secondary btn-sm rounded-pill px-3" data-bs-dismiss="modal">취소</button>
+                    <button type="submit" class="btn btn-coral btn-sm rounded-pill px-4 fw-semibold" id="btnSubmitAdjust">
+                        <i class="bi bi-check-lg me-1"></i>재고 조정 반영
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- ========================================================================= -->
+<!-- 5. 재고 변경 이력 조회 모달 (AJAX 로드) -->
+<!-- ========================================================================= -->
+<div class="modal fade" id="logsModal" tabindex="-1" aria-labelledby="logsModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header">
+                <h5 class="modal-title fw-bold fs-6 d-flex align-items-center gap-2" id="logsModalLabel">
+                    <i class="bi bi-clock-history text-coral"></i>
+                    <span>재고 변동 이력 조회</span>
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="닫기"></button>
+            </div>
+            <div class="modal-body p-4">
+                <div class="p-3 mb-3 bg-light rounded-3 border">
+                    <div class="very-small text-muted mb-1">조회 항목</div>
+                    <div class="fw-bold text-dark small" id="logsModalItemTitle">상품명</div>
+                </div>
+
+                <!-- 이력 테이블 컨테이너 -->
+                <div id="logsTableContainer">
+                    <div class="text-center py-4 text-muted" id="logsLoadingSpinner">
+                        <div class="spinner-border spinner-border-sm text-coral me-1" role="status"></div>
+                        <span class="very-small">이력을 불러오는 중...</span>
+                    </div>
+
+                    <div class="table-responsive d-none" id="logsTableWrapper">
+                        <table class="table admin-table mb-0 very-small align-middle">
+                            <thead>
+                                <tr>
+                                    <th>처리 일시</th>
+                                    <th>조정 유형</th>
+                                    <th>변동 수량</th>
+                                    <th>최종 재고</th>
+                                    <th>조정 사유</th>
+                                    <th>작업 관리자</th>
+                                </tr>
+                            </thead>
+                            <tbody id="logsTableBody">
+                                <!-- AJAX 동적 렌더링 -->
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="p-4 text-center text-muted d-none" id="logsEmptyNotice">
+                        <i class="bi bi-clock-history fs-2 d-block mb-2 opacity-50"></i>
+                        <div>기록된 재고 변경 이력이 없습니다.</div>
+                        <div class="very-small mt-1">이 항목에 대해 재고 조정이 발생하면 최신순으로 기록됩니다.</div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer bg-light p-3">
+                <button type="button" class="btn btn-secondary btn-sm rounded-pill px-4" data-bs-dismiss="modal">닫기</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // 1. 재고 조정 모달 인터랙션
+    const adjustModalElem = document.getElementById('adjustModal');
+    const adjustModal = adjustModalElem ? new bootstrap.Modal(adjustModalElem) : null;
+
+    const modalTargetType = document.getElementById('modalTargetType');
+    const modalTargetId = document.getElementById('modalTargetId');
+    const modalExpectedStock = document.getElementById('modalExpectedStock');
+    const modalItemTitle = document.getElementById('modalItemTitle');
+    const modalCurrentStockText = document.getElementById('modalCurrentStockText');
+    const modalQuantity = document.getElementById('modalQuantity');
+    const modalExpectedStockText = document.getElementById('modalExpectedStockText');
+    const quantityInputLabel = document.getElementById('quantityInputLabel');
+    const quantityHelpText = document.getElementById('quantityHelpText');
+    const adjustForm = document.getElementById('adjustForm');
+    const btnSubmitAdjust = document.getElementById('btnSubmitAdjust');
+
+    let currentItemStock = 0;
+
+    // 조정 버튼 클릭 시 모달 열기 및 초기화
+    document.querySelectorAll('.btn-open-adjust').forEach(btn => {
+        btn.addEventListener('click', function() {
+            const targetType = this.dataset.targetType;
+            const targetId = this.dataset.targetId;
+            const prodName = this.dataset.productName;
+            const optInfo = this.dataset.optionInfo;
+            const stock = parseInt(this.dataset.currentStock, 10) || 0;
+
+            currentItemStock = stock;
+            modalTargetType.value = targetType;
+            modalTargetId.value = targetId;
+            modalExpectedStock.value = stock;
+
+            modalItemTitle.textContent = `${prodName} (${optInfo})`;
+            modalCurrentStockText.textContent = stock;
+
+            // 라디오 초기화 (입고 선택)
+            document.getElementById('typeIn').checked = true;
+            modalQuantity.value = 1;
+            modalQuantity.min = 1;
+            document.getElementById('modalReason').value = '';
+
+            updateExpectedStock();
+            if (adjustModal) adjustModal.show();
+        });
+    });
+
+    // 라디오 변경 시 라벨 및 최소값/안내문 변경
+    function getSelectedAdjustType() {
+        const checked = document.querySelector('input[name="adjust_type"]:checked');
+        return checked ? checked.value : 'IN';
+    }
+
+    document.querySelectorAll('input[name="adjust_type"]').forEach(radio => {
+        radio.addEventListener('change', function() {
+            const type = this.value;
+            if (type === 'IN') {
+                quantityInputLabel.innerHTML = '입고 수량 <span class="text-danger">*</span>';
+                quantityHelpText.textContent = '입고할 수량을 1 이상의 양의 정수로 입력하세요.';
+                modalQuantity.min = 1;
+                if (parseInt(modalQuantity.value, 10) < 1) modalQuantity.value = 1;
+            } else if (type === 'OUT') {
+                quantityInputLabel.innerHTML = '출고 수량 <span class="text-danger">*</span>';
+                quantityHelpText.textContent = `출고할 수량을 입력하세요. (현재 최대 ${currentItemStock}개 출고 가능)`;
+                modalQuantity.min = 1;
+                if (parseInt(modalQuantity.value, 10) < 1) modalQuantity.value = 1;
+            } else { // ADJUST
+                quantityInputLabel.innerHTML = '실사 확인 최종 수량 <span class="text-danger">*</span>';
+                quantityHelpText.textContent = '실제 확인된 최종 재고 수량을 0 이상의 정수로 입력하세요.';
+                modalQuantity.min = 0;
+                if (parseInt(modalQuantity.value, 10) < 0) modalQuantity.value = 0;
+            }
+            updateExpectedStock();
+        });
+    });
+
+    // 수량 변경 시 예상 최종 재고 실시간 계산
+    function updateExpectedStock() {
+        const type = getSelectedAdjustType();
+        const qty = parseInt(modalQuantity.value, 10) || 0;
+        let expected = currentItemStock;
+
+        if (type === 'IN') {
+            expected = currentItemStock + qty;
+        } else if (type === 'OUT') {
+            expected = currentItemStock - qty;
+        } else { // ADJUST
+            expected = qty;
+        }
+
+        modalExpectedStockText.textContent = expected;
+        if (expected < 0) {
+            modalExpectedStockText.className = 'fs-5 fw-bold text-danger';
+            btnSubmitAdjust.disabled = true;
+        } else {
+            modalExpectedStockText.className = 'fs-5 fw-bold text-coral';
+            btnSubmitAdjust.disabled = false;
+        }
+    }
+
+    if (modalQuantity) {
+        modalQuantity.addEventListener('input', updateExpectedStock);
+    }
+
+    // 중복 제출 방지
+    if (adjustForm && btnSubmitAdjust) {
+        adjustForm.addEventListener('submit', function(e) {
+            const type = getSelectedAdjustType();
+            const qty = parseInt(modalQuantity.value, 10);
+            if (isNaN(qty)) {
+                e.preventDefault();
+                alert('올바른 수량을 입력해주세요.');
+                return;
+            }
+            if (type === 'OUT' && currentItemStock - qty < 0) {
+                e.preventDefault();
+                alert(`출고 수량이 현재 재고(${currentItemStock}개)보다 많아 재고가 음수가 될 수 없습니다.`);
+                return;
+            }
+            btnSubmitAdjust.disabled = true;
+            btnSubmitAdjust.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>처리 중...';
+        });
+    }
+
+    // =========================================================================
+    // 2. 재고 변경 이력 모달 (AJAX 조회)
+    // =========================================================================
+    const logsModalElem = document.getElementById('logsModal');
+    const logsModal = logsModalElem ? new bootstrap.Modal(logsModalElem) : null;
+    const logsModalItemTitle = document.getElementById('logsModalItemTitle');
+    const logsLoadingSpinner = document.getElementById('logsLoadingSpinner');
+    const logsTableWrapper = document.getElementById('logsTableWrapper');
+    const logsTableBody = document.getElementById('logsTableBody');
+    const logsEmptyNotice = document.getElementById('logsEmptyNotice');
+
+    document.querySelectorAll('.btn-open-logs').forEach(btn => {
+        btn.addEventListener('click', async function() {
+            const productId = this.dataset.productId;
+            const optionId = this.dataset.optionId;
+            const itemTitle = this.dataset.itemTitle;
+
+            logsModalItemTitle.textContent = itemTitle;
+            logsLoadingSpinner.classList.remove('d-none');
+            logsTableWrapper.classList.add('d-none');
+            logsEmptyNotice.classList.add('d-none');
+            logsTableBody.innerHTML = '';
+
+            if (logsModal) logsModal.show();
+
+            try {
+                let url = `/admin/inventory/logs?product_id=${encodeURIComponent(productId)}`;
+                if (optionId) url += `&option_id=${encodeURIComponent(optionId)}`;
+
+                const res = await fetch(url);
+                const data = await res.json();
+
+                logsLoadingSpinner.classList.add('d-none');
+
+                if (data.success && data.logs && data.logs.length > 0) {
+                    logsTableWrapper.classList.remove('d-none');
+                    data.logs.forEach(log => {
+                        const tr = document.createElement('tr');
+
+                        let typeBadge = '';
+                        if (log.change_type === 'IN') {
+                            typeBadge = '<span class="badge bg-success">입고</span>';
+                        } else if (log.change_type === 'OUT') {
+                            typeBadge = '<span class="badge bg-danger">출고</span>';
+                        } else {
+                            typeBadge = '<span class="badge bg-primary">실사조정</span>';
+                        }
+
+                        const changeStr = log.quantity_change > 0 ? `+${log.quantity_change}` : `${log.quantity_change}`;
+                        const dateStr = (log.created_at || '').substring(0, 19).replace('T', ' ');
+
+                        tr.innerHTML = `
+                            <td class="text-muted">${dateStr}</td>
+                            <td>${typeBadge}</td>
+                            <td>
+                                <span class="fw-bold ${log.quantity_change >= 0 ? 'text-success' : 'text-danger'}">${changeStr}개</span>
+                                <span class="very-small text-muted">(${log.before_stock} &rarr; ${log.after_stock})</span>
+                            </td>
+                            <td><strong class="text-dark">${log.after_stock}개</strong></td>
+                            <td><span class="text-dark">${log.reason || '-'}</span></td>
+                            <td><span class="very-small text-muted">${log.admin_email || '관리자'}</span></td>
+                        `;
+                        logsTableBody.appendChild(tr);
+                    });
+                } else {
+                    logsEmptyNotice.classList.remove('d-none');
+                }
+            } catch (err) {
+                console.error('[Inventory Logs Error]', err);
+                logsLoadingSpinner.classList.add('d-none');
+                logsEmptyNotice.classList.remove('d-none');
+                logsEmptyNotice.innerHTML = `
+                    <div class="text-danger mb-2"><i class="bi bi-exclamation-triangle-fill fs-3"></i></div>
+                    <div class="text-danger fw-semibold">이력을 불러오지 못했습니다.</div>
+                    <div class="very-small text-muted mt-1">DB에 inventory_logs 테이블이 생성되었는지 확인해주세요.</div>
+                `;
+            }
+        });
+    });
+});
+</script>
+{% endblock %}
